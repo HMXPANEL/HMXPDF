@@ -151,8 +151,16 @@ jobs:
           test "${#APKS[@]}" -gt 0
           BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           for APK in "${APKS[@]}"; do
-            CERTS=$("$BUILD_TOOLS/apksigner" verify --print-certs "$APK")
-            echo "$CERTS" | grep -q 'Signer #1 certificate DN:'
+            if ! CERTS=$("$BUILD_TOOLS/apksigner" verify --print-certs "$APK" 2>&1); then
+              echo "apksigner failed for $APK" >&2
+              echo "$CERTS" >&2
+              exit 1
+            fi
+            if ! echo "$CERTS" | grep -q 'Signer #1 certificate DN:'; then
+              echo "No signer certificate in apksigner output for $APK" >&2
+              echo "$CERTS" >&2
+              exit 1
+            fi
             if echo "$CERTS" | grep -qi 'CN=Android Debug'; then
               echo "Release APK is debug-signed: $APK" >&2
               exit 1

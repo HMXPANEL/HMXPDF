@@ -10,7 +10,8 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
 const MAX_BODY_BYTES = 4096;
 const MAX_KEYS = 50;
-const MAX_AGE_SECONDS = 300;
+// Keep emergency changes responsive without forcing a request per app launch.
+const MAX_AGE_SECONDS = 60;
 const RATE_LIMIT_PER_MINUTE = 120;
 
 const KEY_PATTERN = /^[a-z][a-z0-9_.-]{2,63}$/;
@@ -120,8 +121,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   const ip = (req.headers.get("x-forwarded-for") ?? "").split(",")[0].trim() || "unknown";
+  // Store only a pseudonymous bucket key, never the raw client IP.
+  const ipKey = await sha256Hex(ip);
   const { data: allowed, error: limitError } = await hmx.rpc("consume_rate_limit", {
-    p_bucket: `config:${ip}`,
+    p_bucket: `config:${ipKey}`,
     p_limit: RATE_LIMIT_PER_MINUTE,
     p_window_seconds: 60,
   });

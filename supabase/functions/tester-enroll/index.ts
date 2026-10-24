@@ -136,10 +136,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   const ip = (req.headers.get("x-forwarded-for") ?? "").split(",")[0].trim() || "unknown";
   const codeHash = await sha256Hex(inviteCode.toLowerCase());
+  // Store only a pseudonymous bucket key, never the raw client IP.
+  const ipKey = await sha256Hex(ip);
 
   const [ipLimit, codeLimit] = await Promise.all([
     hmx.rpc("consume_rate_limit", {
-      p_bucket: `enroll-ip:${ip}`,
+      p_bucket: `enroll-ip:${ipKey}`,
       p_limit: 10,
       p_window_seconds: 60,
     }),

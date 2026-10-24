@@ -1,5 +1,5 @@
 -- HMXPDF Phase 2 security/constraint checks.
--- Run against a project with migration 20261024000100 applied:
+-- Run against a project with migration 20261024105232 applied:
 --   psql "$SUPABASE_DB_URL" -f supabase/tests/hmx_security.sql
 -- or paste the whole file into the Supabase SQL editor.
 -- The transaction is rolled back; no test rows or settings survive.
@@ -43,6 +43,20 @@ begin
   exception when check_violation then null;
   end;
 
+  -- Audit metadata must stay an object within the size cap.
+  begin
+    insert into hmx.admin_audit_log (action, metadata) values ('test.bad.audit', '[]'::jsonb);
+    raise exception 'FAIL: accepted array audit metadata';
+  exception when check_violation then null;
+  end;
+
+  begin
+    insert into hmx.admin_audit_log (action, metadata)
+    values ('test.bad.audit', jsonb_build_object('blob', repeat('a', 9000)));
+    raise exception 'FAIL: accepted oversized audit metadata';
+  exception when check_violation then null;
+  end;
+
   -- RLS is enabled on every hmx table.
   select count(*) into v_count
   from pg_class c join pg_namespace n on n.oid = c.relnamespace
@@ -80,12 +94,21 @@ begin
   exception when insufficient_privilege then null;
   end;
 
+  begin
+    set local role anon;
+    perform 1 from hmx.admin_audit_log;
+    raise exception 'FAIL: anon read hmx.admin_audit_log';
+  exception when insufficient_privilege then null;
+  end;
+
   -- service_role can perform the required operations.
   set local role service_role;
   insert into hmx.feature_flags (key, name, rollout_percentage) values ('test.service', 'service', 50);
   select count(*) into v_count from hmx.feature_flags where key = 'test.service';
   if v_count <> 1 then raise exception 'FAIL: service_role insert/select'; end if;
   delete from hmx.feature_flags where key = 'test.service';
+  insert into hmx.admin_audit_log (action, target_type, target_id, metadata)
+  values ('test.service.audit', 'test', 'service', '{"ok":true}'::jsonb);
   reset role;
 
   -- Fixed-window rate limit boundary.

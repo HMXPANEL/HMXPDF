@@ -4,7 +4,7 @@
 **Branch:** `feature/hmxpdf-diagnostics-admin-updates`
 **Supabase project:** `tchoqlaqgcrbbvomaebo` — `https://tchoqlaqgcrbbvomaebo.supabase.co`
 **Project region:** `ap-northeast-2` (management API). Edge Function logs label the runtime region `ap-south-1`; this is recorded as an observation, not changed.
-**Status:** Implementation complete and deployed. Admin AAL2 end-to-end verification is **BLOCKED** on admin/TOTP/`ADMIN_ORIGIN` provisioning. Phase 3 has not started.
+**Status:** Implementation complete and deployed. A second verification pass on 2026-10-24 rechecked Git/remote state, the live migration, deployed functions, RLS/grants, public signup, rate-limit IP handling, and the available tests. Public signup is **enabled** and must be disabled before admin provisioning. Admin AAL2 end-to-end verification remains **BLOCKED** on admin/TOTP/`ADMIN_ORIGIN` provisioning. Phase 3 has not started.
 
 ---
 
@@ -31,13 +31,16 @@ Phase 2 delivers the backend foundation for remote feature configuration:
 | Migration `hmx_feature_flags` | Applied. Remote version `20261024105232`, matching `supabase/migrations/20261024105232_hmx_feature_flags.sql`. |
 | `hmx` tables | 9 created, RLS enabled on all 9. |
 | `hmx` functions | `is_admin`, `admin_role`, `consume_rate_limit`, `enroll_tester`, `touch_feature_flag`, `touch_system_settings`. |
-| Edge Function `config` | Deployed, version 2, `verify_jwt = false`. |
-| Edge Function `tester-enroll` | Deployed, version 2, `verify_jwt = false`. |
+| Edge Function `config` | Deployed, version 3, `verify_jwt = false`. v3 adds the 60 s freshness cap and SHA-256 rate-limit bucket keys. |
+| Edge Function `tester-enroll` | Deployed, version 3, `verify_jwt = false`. v3 adds SHA-256 rate-limit bucket keys. |
 | Edge Function `admin-api` | Deployed, version 1, `verify_jwt = true`. |
 | Test data | Removed after tests. 0 flags, 0 testers, 0 invites, 0 audit rows, 0 rate-limit rows. |
 | `system_settings.kill_switch_all` | `false`. |
 | Auth users / MFA factors | None created. |
+| Public signup | **Enabled** (`disable_signup: false`, email provider enabled). Not changed; must be disabled in the dashboard before creating the admin. |
 | `ADMIN_ORIGIN` secret | Not set. `admin-api` fails closed with HTTP 503 until it is configured. |
+| Config freshness | `max_age_seconds` is **60** in source and in the live `config` v3 response (reduced from 300 for kill-switch responsiveness). |
+| Rate-limit bucket keys | SHA-256 of the client IP (pseudonymous), never the raw IP. The platform overwrites client-supplied `x-forwarded-for`; verified live. |
 
 The project was empty before this work. No existing database objects, auth users, policies, or data were modified or deleted.
 
@@ -125,8 +128,8 @@ Migration: `supabase/migrations/20261024105232_hmx_feature_flags.sql`.
 - `keys`: required, 1–50 unique keys matching `^[a-z][a-z0-9_.-]{2,63}$`.
 - `install_id`: optional UUID; required for fractional rollout.
 - `app_version_code`: optional integer 0–2,100,000,000.
-- `tester_token`: optional 64 hex characters; invalid/revoked tokens simply do not grant tester status.
-- Body limit: 4 KiB. Methods: `POST`/`OPTIONS`. Rate limit: 120 requests/minute/IP → `429` with `Retry-After: 60`.
+- `tester_token`: optional 64 hex characters. A malformed token returns `400 invalid_tester_token`; a well-formed but unknown or revoked token is accepted but does not grant tester status.
+- Body limit: 4 KiB. Methods: `POST`/`OPTIONS`. Rate limit: 120 requests/minute/IP → `429` with `Retry-After: 60`. The limiter bucket stores a SHA-256 hash of the IP, not the IP itself.
 
 **Response (200):**
 
@@ -134,7 +137,7 @@ Migration: `supabase/migrations/20261024105232_hmx_feature_flags.sql`.
 {
   "revision": "sha256-hex",
   "generated_at": "2026-10-24T10:57:29.618Z",
-  "max_age_seconds": 300,
+  "max_age_seconds": 60,
   "kill_switch": false,
   "flags": {
     "feature.example": {
@@ -150,7 +153,7 @@ Migration: `supabase/migrations/20261024105232_hmx_feature_flags.sql`.
 - Only requested, existing flags are returned. Unknown flags are **absent**; clients must treat absence as OFF.
 - `source` is one of `global_kill_switch`, `flag_kill_switch`, `disabled`, `not_started`, `expired`, `version_mismatch`, `tester`, `segment`, `rollout`, `missing_install_id`, `default_off`.
 - `revision` is a SHA-256 over the effective flag map and the global kill switch. It changes when effective configuration changes.
-- `Cache-Control: no-store`; clients may cache up to `max_age_seconds` (300 s). Safety-critical flags should use a shorter client-side interval.
+- `Cache-Control: no-store`; clients may cache up to `max_age_seconds` (60 s). Safety-critical flags should use a shorter client-side interval (for example 15–30 s). The 60 s value is a cap, not a requirement to wait that long.
 - Errors: `400` invalid input, `413` body too large, `405` wrong method, `429` rate limited, `503` dependency failure. Error bodies are `{"error":"code"}`.
 
 ### 5.2 `tester-enroll` — invite redemption
@@ -229,6 +232,8 @@ Response: `{"ok":true,"data":...}` or `{"error":"code"}`.
 | `invites.revoke` | `invite_id` | Revoke an invite. |
 | `audit.list` | — | Latest 100 audit rows. |
 
+`flags.upsert` is a **full replacement**, not a patch. Omitted optional fields reset to their defaults (`enabled: false`, `rollout_percentage: 0`, `kill_switch: false`, `config: {}`, null schedule/version fields). Read the current row with `flags.list` and send the full desired object when changing one field.
+
 Every successful mutation attempts an `admin_audit_log` insert. Audit writes are best-effort; a DB failure after the mutation is logged but does not roll back the mutation.
 
 **CORS:** only the exact `ADMIN_ORIGIN` is allowed. If `ADMIN_ORIGIN` is unset, every request returns `503 admin_origin_not_configured`. This is intentional fail-closed behavior, not a deployment success.
@@ -275,11 +280,12 @@ enabled = bucket < rollout_percentage * 100
 - Tester status is server-authenticated by token hash. A client cannot become a tester by editing a preference or sending an arbitrary ID.
 - Explicit tester grants are keyed by `tester_id` in `hmx.feature_flag_testers`; segment grants by `segment` in `hmx.feature_flag_segments`.
 - Optional metadata (`app_version_code`, `app_version_name`, `android_api`, `device_model`) is stored only for enrolled testers. It is not collected from ordinary users.
+- Rate-limit buckets store a SHA-256 hash of the client IP, not the raw IP. This is pseudonymous rather than anonymous, is service-role-only, and still needs a retention policy.
 - Revocation is immediate for future config requests; an already-cached client may keep the last response until its freshness window expires.
 - Reinstall/data-clear: the client gets a new `install_id` and loses the tester token. The old tester row remains until an admin deletes it; re-enrollment with the old `install_id` is rejected with `409`.
 - Phase 2 does not collect PDFs, document contents, diagnostics, stack traces, file paths, or analytics.
 
-**Retention:** not implemented in Phase 2. Recommended: delete revoked testers/invites and old `rate_limits` rows periodically; define a retention period before Phase 3 diagnostics ships.
+**Retention:** not implemented in Phase 2. Recommended: delete revoked testers/invites and `rate_limits` rows older than the longest rate-limit window (one hour) periodically; define a retention period before Phase 3 diagnostics ships. The pseudonymous IP hashes should not be retained indefinitely.
 
 ---
 
@@ -294,13 +300,56 @@ enabled = bucket < rollout_percentage * 100
 - Exact `ADMIN_ORIGIN` CORS and origin check.
 - Strict body/field validation and 32 KiB body limit.
 
-**Not changed in Phase 2:** Supabase Auth settings, public signup, email templates, MFA policy, or existing users. The project had no auth users at the start. Public signup must be inspected and disabled/restricted in the dashboard before creating the admin account; this was **not** verified.
+**Live auth setting verified (2026-10-24):** `GET /auth/v1/settings` returns `disable_signup: false` and `external.email: true`. Public email signup is therefore **enabled**. This does not grant admin access because AAL2 and the allowlist are still enforced, but it is unnecessary account-creation surface for this project and must be disabled before the admin account is created. It was **not changed** during this verification pass.
+
+**Exact dashboard action:** Authentication → Sign In / Providers → Email → turn off **Allow new users to sign up**. Do not disable the Email provider itself; the admin still needs email/password. The same setting is `disable_signup` in `PATCH /v1/projects/<project-ref>/config/auth`. Recheck `GET /auth/v1/settings` for `disable_signup: true`.
 
 **Bootstrap steps (manual, after approval):**
 
-1. In Supabase Auth, create the admin user (email + strong password) and disable public signup.
-2. Enroll TOTP for that user; confirm the session reaches `aal2`.
-3. Insert the allowlist row:
+1. Disable public signup as above.
+2. Authentication → Users → **Add user**: email + strong password, enable **Auto Confirm User**. Copy the user UUID.
+3. Enroll TOTP for that user. The project dashboard does not provide a per-user TOTP enrollment screen in the current UI, so use a trusted one-off local script with `@supabase/supabase-js` and the project URL + publishable/anon key. Do not run this in an untrusted browser page and do not log the access token or TOTP secret.
+
+```ts
+// One-off local script. Do not commit real values or the resulting session.
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(SUPABASE_URL, PUBLISHABLE_KEY);
+const { error: signInError } = await supabase.auth.signInWithPassword({
+  email: ADMIN_EMAIL,
+  password: ADMIN_PASSWORD,
+});
+if (signInError) throw signInError;
+
+const { data: enrollment, error: enrollError } = await supabase.auth.mfa.enroll({
+  factorType: "totp",
+  friendlyName: "HMXPDF admin",
+});
+if (enrollError) throw enrollError;
+// Scan enrollment.totp.qr_code with the authenticator and store the secret securely.
+// enrollment.id is the factor id.
+```
+
+Then complete the challenge with a current 6-digit code:
+
+```ts
+const { data: challenge, error: challengeError } = await supabase.auth.mfa.challenge({
+  factorId: FACTOR_ID,
+});
+if (challengeError) throw challengeError;
+
+const { data: verified, error: verifyError } = await supabase.auth.mfa.verify({
+  factorId: FACTOR_ID,
+  challengeId: challenge.id,
+  code: TOTP_CODE,
+});
+if (verifyError) throw verifyError;
+// verified.access_token now has aal: "aal2"; use it only as a Bearer token.
+```
+
+Supabase does not issue TOTP recovery codes. Register a second TOTP factor on a different device, or store the secret in a secure offline location; losing all factors can lock the admin out.
+
+4. Insert the allowlist row in the SQL editor (service-role/dashboard only; never expose this SQL to clients):
 
 ```sql
 insert into hmx.admin_users (user_id, role)
@@ -308,10 +357,17 @@ values ('<auth-user-uuid>', 'admin')
 on conflict (user_id) do update set role = 'admin', is_active = true;
 ```
 
-4. Set the Edge Function secret `ADMIN_ORIGIN` to the exact Phase 4 Vercel origin.
-5. Verify the AAL1 rejection, AAL2 acceptance, non-admin rejection, inactive-admin rejection, and audit-row creation.
+5. Set the Edge Function secret `ADMIN_ORIGIN` only after the real Phase 4 Vercel deployment exists. Use the exact origin, including scheme, with **no trailing slash** and no wildcard. Do not set a placeholder.
+6. Verify the authorization matrix from a browser on that exact origin:
+   - AAL1 access token → `403 mfa_required`.
+   - AAL2 access token + active `admin` allowlist row → `200`.
+   - AAL2 access token + no allowlist row → `403 forbidden`.
+   - AAL2 access token + inactive allowlist row → `403 forbidden`.
+   - Wrong `Origin` header → `403 origin_not_allowed`.
+   - `settings.kill-switch` with `enabled: false` succeeds and creates an `audit.list` row.
+   - A request with no `Origin` header is allowed by design; CORS is a browser boundary, not the authentication boundary.
 
-No service-role key is needed for these steps in the browser; use the Supabase dashboard/SQL editor or CLI.
+No service-role key is needed in the browser for these steps; use the Supabase dashboard, SQL editor, and the user's AAL2 session.
 
 ---
 
@@ -321,8 +377,8 @@ No service-role key is needed for these steps in the browser; use the Supabase d
 - Per-flag switch: `hmx.feature_flags.kill_switch`. Overrides testers and percentage rollout for that flag.
 - Disabled (`enabled = false`) is also a hard OFF before tester/segment/rollout.
 - The response includes both `kill_switch` (global) and per-flag `enabled`/`source`, so a client can fail closed even if it does not understand a flag's config.
-- **Maximum practical delay:** `max_age_seconds` (300 s) + the client's refresh interval + time offline. A device that is offline or not refreshing cannot be killed instantly. Phase 2 does not claim otherwise.
-- **Cold start / failed request / invalid response / server error:** the Phase 3 client must default every flag to OFF and may use a cached response only while it is within its freshness window. Safety-critical features should use a shorter window (for example 60 s) and must not block app startup on the network.
+- **Maximum practical delay:** `max_age_seconds` (60 s) + the client's refresh interval + time offline. A device that is offline or not refreshing cannot be killed instantly. Phase 2 does not claim otherwise.
+- **Cold start / failed request / invalid response / server error:** the Phase 3 client must default every flag to OFF and may use a cached response only while it is within its freshness window. Safety-critical features should use a shorter window (for example 15–30 s) and must not block app startup on the network.
 - The backend never claims it can remove already-downloaded native code. Flags only gate code that is already in the APK.
 
 ---
@@ -339,11 +395,15 @@ Verified on the live project:
 | Function `EXECUTE` ACL | only `postgres` and `service_role` |
 | Direct PostgREST with anon key, `Accept-Profile: hmx` | HTTP 401, `42501 permission denied for schema hmx` |
 | `service_role` table grants | 63 table privileges across 9 tables |
-| SQL role tests | anon/authenticated denied; service_role can select/insert/delete |
-| SQL constraint tests | invalid percentage/key/config/schedule/version range rejected |
+| SQL role tests | anon/authenticated denied; service_role can select/insert/delete and insert audit rows |
+| SQL constraint tests | invalid percentage/key/config/schedule/version range and array/oversized audit metadata rejected |
 | Rate-limit SQL boundary | 2 allowed, 3rd denied |
 | Invite SQL tests | valid enrolls once; exhausted/expired rejected; duplicate install rolls back invite use |
 | `config_version` trigger | increments on update |
+| Public signup setting | **Enabled** (`disable_signup: false`); verified via `GET /auth/v1/settings`. Must be disabled before admin provisioning. |
+| Client-supplied `x-forwarded-for` | Ignored/replaced by the platform in a live request; the rate limiter used the real client IP. |
+| Rate-limit bucket privacy | Source hashes the IP before storage; live bucket key is `config:<64 hex>`, not the raw IP. |
+| Config freshness | Response advertises `max_age_seconds: 60` after the `config` redeploy. |
 
 The `hmx` schema is exposed to PostgREST for service-role resolution. This does **not** grant client access; the security boundary is schema `USAGE` + table grants + RLS. Any future table added to `hmx` must be followed by explicit `REVOKE ALL ... FROM public, anon, authenticated` and a grant review.
 
@@ -401,9 +461,13 @@ Do **not** add `SUPABASE_SERVICE_ROLE_KEY` to GitHub Actions, Android, or Vercel
 | Test | Command / method | Result |
 |---|---|---|
 | Rollout algorithm | `node --test supabase/tests/rollout.test.ts` | 18/18 pass: 0/1/5/50/100 %, determinism, unknown flags, disabled, tester/segment, schedule, version gates, invalid percentage, kill switches, revision stability. |
-| SQL constraints/RLS/rate-limit/invites | `supabase/tests/hmx_security.sql` via SQL editor/MCP, transaction rolled back | `sql_security_tests_passed` |
+| SQL constraints/RLS/rate-limit/invites/audit | `supabase/tests/hmx_security.sql` via SQL editor/MCP, transaction rolled back | `sql_security_tests_passed` (re-run 2026-10-24) |
 | Migration apply | Supabase MCP `apply_migration` | Success; 9 tables, 6 functions, RLS 9/9. |
-| Direct PostgREST denial | anon key + `Accept-Profile: hmx` | 401 `42501 permission denied for schema hmx` |
+| Direct PostgREST denial | anon key + `Accept-Profile: hmx` | 401 `42501 permission denied for schema hmx` (re-run 2026-10-24) |
+| Public signup inspection | `GET /auth/v1/settings` with publishable key | `disable_signup:false`, `external.email:true`; **enabled**, remediation pending |
+| Client-supplied `x-forwarded-for` | live config request with a spoofed header, then inspect `rate_limits` | Platform replaced it; limiter bucketed the real client IP |
+| Rate-limit bucket privacy | live config request, then inspect `rate_limits` | Bucket key is `config:<64-hex SHA-256>`; no raw IP stored |
+| Config freshness | live config response | `max_age_seconds:60` (after `config` redeploy) |
 | Config 100 % + config payload | live HTTP | `enabled:true`, `source:rollout`, `config:{value:1}` |
 | Global kill switch | live HTTP after SQL toggle | `enabled:false`, `source:global_kill_switch`, `kill_switch:true`, new revision |
 | Tester enrollment | live HTTP | 201, token returned once, segment `default` |
@@ -413,15 +477,17 @@ Do **not** add `SUPABASE_SERVICE_ROLE_KEY` to GitHub Actions, Android, or Vercel
 | Tester revocation | live HTTP | flag off, `source:rollout` |
 | Invalid inputs | live HTTP | 400 for bad keys/ids/JSON/invites; 413 oversized; 405 GET |
 | Rate limiting | 130 parallel config calls | 120×200, 10×429, `Retry-After: 60` |
-| Admin unauthenticated | live HTTP | platform 401 `UNAUTHORIZED_NO_AUTH_HEADER` |
+| Admin with no credentials | live HTTP, no `apikey`/`Authorization` | platform 401 `UNAUTHORIZED_NO_AUTH_HEADER` |
+| Admin with publishable `apikey` only | live HTTP | 503 `admin_origin_not_configured` (fail closed) |
 | Admin with anon JWT | live HTTP | 503 `admin_origin_not_configured` (fail closed) |
+| Admin with malformed bearer | live HTTP | platform 401 `UNAUTHORIZED_INVALID_JWT_FORMAT` |
 | Log secret scan | unified logs query for `tester_token`, `eyJhbGci`, `service_role` | No matches |
 
 ### BLOCKED
 
 | Test | Reason | Next action |
 |---|---|---|
-| AAL1 rejected / AAL2 accepted | No admin user, TOTP factor, or `ADMIN_ORIGIN` secret. | Provision the admin, enroll TOTP, set `ADMIN_ORIGIN`, rerun. |
+| AAL1 rejected / AAL2 accepted | No admin user, TOTP factor, or `ADMIN_ORIGIN` secret. `ADMIN_ORIGIN` is checked before `authenticate`, so the 503 rows above do not exercise the AAL2/allowlist path. | Provision the admin, enroll TOTP, set `ADMIN_ORIGIN`, rerun. |
 | Non-admin/inactive-admin rejection | Same. | Same. |
 | Audit rows on mutations | Same. | Same. |
 | Admin mutations via `admin-api` | Same. | Same. |
@@ -433,7 +499,7 @@ Do **not** add `SUPABASE_SERVICE_ROLE_KEY` to GitHub Actions, Android, or Vercel
 | `supabase db reset` from empty local database | No Supabase CLI, Docker, or local Postgres. Remote apply succeeded; local reproducibility not executed. |
 | Deno type-check/unit tests | Deno is not installed. Functions were deployed and executed against the live project; Node tests cover the rollout module. |
 | Android regression/build | No Android changes in Phase 2; no Android SDK/emulator in this environment. |
-| Public signup setting verification | Auth settings were not inspected or changed; verify in the dashboard. |
+| Disable public signup | Verified enabled but not changed; requires the dashboard/Management API action above. |
 
 ---
 
@@ -441,11 +507,11 @@ Do **not** add `SUPABASE_SERVICE_ROLE_KEY` to GitHub Actions, Android, or Vercel
 
 1. **`ADMIN_ORIGIN` is unset.** `admin-api` returns 503 until it is configured. This is intentional, but it means Phase 2 admin functionality is not usable yet.
 2. **No admin user/TOTP exists.** The AAL2 and allowlist path is implemented but not end-to-end verified.
-3. **Public signup state unknown.** It was not changed. Disable/restrict it before creating the admin account.
+3. **Public signup is enabled.** Verified live (`disable_signup:false`). It does not bypass AAL2/allowlist, but it is unnecessary account-creation surface. Disable it before creating the admin account.
 4. **Config is structurally validated, not schema-validated per flag.** The server enforces JSON object + 16 KiB. Phase 3 must validate each flag's typed payload and ignore unknown keys. No executable code is stored.
-5. **Audit writes are best-effort.** A DB failure after a mutation can lose the audit row. A transactional mutation+audit RPC can close this gap in Phase 4 if required.
-6. **No retention/cleanup job.** `rate_limits`, revoked testers, and invites grow until manually cleaned. Define retention before diagnostics ships.
-7. **Kill switch is not instantaneous.** Maximum practical delay is the client cache window (300 s) + refresh interval + offline time.
+5. **Audit writes are best-effort.** A DB failure after a mutation can lose the audit row. The failure is logged, but the mutation is not rolled back. A transactional mutation+audit RPC can close this gap in Phase 4 if audit completeness becomes a hard requirement. The current admin volume is zero because no admin exists.
+6. **No retention/cleanup job.** `rate_limits`, revoked testers, and invites grow until manually cleaned. Rate-limit buckets contain SHA-256 IP hashes, which are pseudonymous but should still be deleted after the longest window. Define retention before diagnostics ships.
+7. **Kill switch is not instantaneous.** Maximum practical delay is the client cache window (60 s) + refresh interval + offline time. The previous 300 s value was reduced to 60 s; clients may use a shorter interval for safety-critical flags.
 8. **Reinstall/data-clear re-rolls rollout.** A new `install_id` gets a new bucket; testers lose their token and need a new invite.
 9. **PostgREST exposure requires discipline.** `hmx` is in `db-schemas`; any new table must revoke client grants. The dashboard "Exposed schemas" setting can overwrite the role configuration; re-apply if changed.
 10. **Region label discrepancy.** Management API says `ap-northeast-2`; Edge Function logs label `ap-south-1`. The project was not moved. Confirm the desired region before production data exists.
@@ -462,7 +528,7 @@ Do **not** add `SUPABASE_SERVICE_ROLE_KEY` to GitHub Actions, Android, or Vercel
 - Send `apikey: <anon/publishable key>` and JSON body. No Supabase user JWT is needed.
 - Generate a random UUID `install_id` once and persist it; never use email/phone/advertising ID.
 - Store the tester token in Keystore; send it only in the request body over HTTPS.
-- Cache the response with `revision`; refresh no later than `max_age_seconds` (300 s). Use a shorter interval for safety-critical flags.
+- Cache the response with `revision`; refresh no later than `max_age_seconds` (60 s). Use a shorter interval for safety-critical flags.
 - Treat absent flags, invalid JSON, non-200 responses, and expired cache as **OFF**. Enforce the global `kill_switch` before any feature code runs.
 - Keep flag keys as compile-time constants; remote config gates code already in the APK.
 - Do not use flags as an authorization boundary for sensitive actions.
@@ -484,10 +550,11 @@ Phase 2 changes are committed only to `feature/hmxpdf-diagnostics-admin-updates`
 
 **Required next actions:**
 
-1. Set the Supabase Edge Function secret `ADMIN_ORIGIN` to the Phase 4 Vercel origin.
-2. Disable/restrict public signup; create the admin user; enroll TOTP.
+1. Disable public signup in Authentication → Sign In / Providers → Email (or `PATCH /v1/projects/<project-ref>/config/auth` with `disable_signup: true`). Recheck `GET /auth/v1/settings`.
+2. Create the admin user (auto-confirm), enroll TOTP, and confirm the session reaches `aal2`.
 3. Insert the `hmx.admin_users` allowlist row for that user.
-4. Rerun the blocked AAL1/AAL2/non-admin/inactive-admin/audit tests.
-5. Approve Phase 2 before Phase 3 begins.
+4. Set the Supabase Edge Function secret `ADMIN_ORIGIN` to the real Phase 4 Vercel origin; do not use a placeholder.
+5. Rerun the blocked AAL1/AAL2/non-admin/inactive-admin/audit tests.
+6. Approve Phase 2 before Phase 3 begins.
 
 **Optional, if CI deployment is wanted:** add `SUPABASE_ACCESS_TOKEN` and `SUPABASE_DB_PASSWORD` as GitHub Actions secrets, protect the deployment environment, and add a workflow that runs `supabase db push` and `supabase functions deploy`. Do not add the service-role key to CI.

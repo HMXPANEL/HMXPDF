@@ -1874,7 +1874,7 @@ These require user decisions before or during Phase 2. Recommended defaults are 
 
 **Remote changes actually applied:**
 - Migration `hmx_feature_flags` (remote version `20261024105232`) creating the `hmx` schema, 9 tables, helper functions, triggers, RLS, grants, and the PostgREST schema exposure.
-- Edge Functions `config` (v2), `tester-enroll` (v2), `admin-api` (v1).
+- Edge Functions `config` (v3), `tester-enroll` (v3), `admin-api` (v1).
 - No auth users, TOTP factors, admin allowlist rows, `ADMIN_ORIGIN` secret, flags, testers, or invites remain after test cleanup. `kill_switch_all = false`.
 
 **Inventory:**
@@ -1913,15 +1913,19 @@ These require user decisions before or during Phase 2. Recommended defaults are 
 | Tester revocation | PASS | Revoked token no longer grants the flag; response `source:rollout`, `enabled:false`. |
 | Invalid inputs | PASS | 400 for bad keys/ids/JSON/invites; 413 for oversized bodies; 405 for GET. |
 | Rate limiting | PASS | 130 parallel config calls → 120×200, 10×429, `Retry-After: 60`. |
+| Rate-limit IP handling | PASS | A client-supplied `x-forwarded-for` was replaced by the platform; `rate_limits` stored a SHA-256 IP bucket key, not the raw IP. |
+| Config freshness | PASS | `max_age_seconds` is 60 in source and in the live `config` v3 response (reduced from 300). |
 | Secret scan of logs | PASS | No `tester_token`, JWT, or `service_role` strings in unified logs. |
-| Admin unauthenticated request | PASS | Platform returned 401 (`UNAUTHORIZED_NO_AUTH_HEADER`). |
-| Admin with anon JWT | PASS (fail-closed) | 503 `admin_origin_not_configured`; no privileged action possible. |
-| AAL2 admin end-to-end | **BLOCKED** | No admin user, TOTP factor, or `ADMIN_ORIGIN` secret exists. |
-| Public signup setting | **NOT RUN** | Auth configuration was not changed or asserted; verify in the dashboard. |
+| Admin with no credentials | PASS | Platform returned 401 (`UNAUTHORIZED_NO_AUTH_HEADER`); malformed bearer returned 401 (`UNAUTHORIZED_INVALID_JWT_FORMAT`). |
+| Admin with publishable `apikey` only / anon JWT | PASS (fail-closed) | 503 `admin_origin_not_configured`; no privileged action possible. |
+| AAL2 admin end-to-end | **BLOCKED** | No admin user, TOTP factor, or `ADMIN_ORIGIN` secret exists. `ADMIN_ORIGIN` is checked before `authenticate`, so the 503 rows do not exercise AAL2/allowlist. |
+| Public signup setting | **PASS (verified enabled)** | `GET /auth/v1/settings` returned `disable_signup:false`, `external.email:true`. Not changed; must be disabled before admin provisioning. |
 | Local `supabase db reset` / Deno type-check | **NOT RUN** | No Supabase CLI, Docker, or Deno in the environment; remote deployment and HTTP execution were used instead. |
 
-**Phase 2 security conclusions:** the public configuration path returns only requested flags and never tester/admin lists; tester status is derived from a server-side token hash, not a client flag; kill switches override tester and percentage grants; missing/invalid configuration defaults off; privileged mutations are separated into `admin-api` and require platform JWT verification, `aal2`, and an active `admin_users` row. Admin mutation audit writes are best-effort; a DB outage could lose the audit row after a successful mutation.
+**Phase 2 security conclusions:** the public configuration path returns only requested flags and never tester/admin lists; tester status is derived from a server-side token hash, not a client flag; kill switches override tester and percentage grants; missing/invalid configuration defaults off; privileged mutations are separated into `admin-api` and require platform JWT verification, `aal2`, and an active `admin_users` row. Public email signup is currently enabled and should be disabled before admin provisioning. Rate-limit buckets store SHA-256 IP hashes, not raw IPs. Admin mutation audit writes are best-effort; a DB outage could lose the audit row after a successful mutation.
 
-**Remaining setup:** set the Supabase Edge Function secret `ADMIN_ORIGIN` to the exact Phase 4 Vercel origin; create the admin user, enroll TOTP, and insert the allowlist row; disable/restrict public signup; verify the AAL2 rejection/acceptance matrix. No GitHub Actions secrets are required by the committed Phase 2 code because no deployment workflow was added.
+**Remaining setup:** disable public signup first; create the admin user, enroll TOTP, and insert the allowlist row; set the Supabase Edge Function secret `ADMIN_ORIGIN` to the exact Phase 4 Vercel origin; verify the AAL2 rejection/acceptance matrix. No GitHub Actions secrets are required by the committed Phase 2 code because no deployment workflow was added.
+
+**Verification pass (2026-10-24):** Git branch/remote state, remote migration `20261024105232`, Edge Function versions (`config` v3, `tester-enroll` v3, `admin-api` v1) and `verify_jwt` flags, 9/9 RLS, zero client grants, schema `USAGE`, direct PostgREST denial, rollout tests (18/18), SQL security tests, public signup, and IP bucket handling were rechecked. The only remaining blockers are dashboard/secret provisioning, not known code defects.
 
 **Report:** `docs/HMXPDF_PHASE2_BACKEND_REPORT.md`.

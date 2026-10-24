@@ -1,0 +1,13 @@
+project_id = "tchoqlaqgcrbbvomaebo"
+
+# Public read-only configuration: Android has no Supabase user session.
+[functions.config]
+verify_jwt = false
+
+# Invite redemption: the invite code is the credential, rate-limited server-side.
+[functions.tester-enroll]
+verify_jwt = false
+
+# Privileged administration: platform JWT verification plus AAL2 + allowlist checks.
+[functions.admin-api]
+verify_jwt = true

@@ -146,6 +146,8 @@ jobs:
       - name: Verify every release APK is not debug-signed
         run: |
           mapfile -t APKS < <(find app/build/outputs/apk/play/release -name '*.apk' -print)
+          echo "Found ${#APKS[@]} release APK(s): ${APKS[*]}"
+          find app/build/outputs -maxdepth 4 -type f -name '*.apk' -print || true
           test "${#APKS[@]}" -gt 0
           BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           for APK in "${APKS[@]}"; do

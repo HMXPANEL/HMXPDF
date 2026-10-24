@@ -142,12 +142,11 @@ android {
         getByName("play").kotlin.srcDir("src/gms/java")
         getByName("foss").kotlin.srcDir("src/gms/java")
     }
-    // AGP can't link a dynamic feature against ABI-split APK outputs, and the feature is only
-    // ever delivered through a Play bundle anyway — so register it for bundle builds only.
-    // APK builds (sideload/foss) simply don't contain it; the play installer then falls back.
-    if (gradle.startParameter.taskNames.any { it.contains("bundle", ignoreCase = true) }) {
-        dynamicFeatures += setOf(":office_engine")
-    }
+    // The :office_engine dynamic feature is intentionally not bundled: every flavor installs the
+    // engine through DownloadOfficeEngineInstaller, and the feature's arm-only LibreOffice
+    // binaries cannot satisfy bundletool's rule that all native modules support the same ABIs
+    // (the base app ships armeabi-v7a, arm64-v8a, x86 and x86_64 for OCR).
+    // ponytail: drop the unused feature until Play Feature Delivery is actually wired up.
     // Bundling on-device OCR (bundled ML Kit + Tesseract4Android) added native .so libs for
     // 4 CPU architectures; without splitting, every install carries all 4. This produces one
     // APK per ABI (~1/4 the native-lib weight each) plus a universal fallback for sideloading.

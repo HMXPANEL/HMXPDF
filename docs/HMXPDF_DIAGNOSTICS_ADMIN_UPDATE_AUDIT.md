@@ -1912,10 +1912,12 @@ These require user decisions before or during Phase 2. Recommended defaults are 
 | Invite reuse / duplicate install | PASS | 404 `invalid_invite`; 409 `already_enrolled`; invite `used_count` stayed 0. |
 | Tester revocation | PASS | Revoked token no longer grants the flag; response `source:rollout`, `enabled:false`. |
 | Invalid inputs | PASS | 400 for bad keys/ids/JSON/invites; 413 for oversized bodies; 405 for GET. |
-| Rate limiting | PASS | 130 parallel config calls → 120×200, 10×429, `Retry-After: 60`. |
+| Rate limiting | PASS (re-run) | 130 parallel config calls, fresh bucket → limiter recorded 120 allowed/10 denied; 119×200, 10×429 (`Retry-After: 60`), 1 client-side transport error; hashed bucket key. |
 | Rate-limit IP handling | PASS | A client-supplied `x-forwarded-for` was replaced by the platform; `rate_limits` stored a SHA-256 IP bucket key, not the raw IP. |
 | Config freshness | PASS | `max_age_seconds` is 60 in source and in the live `config` v3 response (reduced from 300). |
-| Secret scan of logs | PASS | No `tester_token`, JWT, or `service_role` strings in unified logs. |
+| Supabase security advisor | PASS (INFO only) | 9 `rls_enabled_no_policy` notices; expected because clients have no schema `USAGE` or table grants. No WARN/ERROR findings. |
+| Supabase performance advisor | PASS (INFO only) | 6 unindexed-FK and 4 unused-index notices; zero-row tables, no indexes added. |
+| Secret scan of logs | PASS (re-run) | No token/JWT/invite values. One `service_role` match in `postgres_logs` is the migration comment text, not a credential. |
 | Admin with no credentials | PASS | Platform returned 401 (`UNAUTHORIZED_NO_AUTH_HEADER`); malformed bearer returned 401 (`UNAUTHORIZED_INVALID_JWT_FORMAT`). |
 | Admin with publishable `apikey` only / anon JWT | PASS (fail-closed) | 503 `admin_origin_not_configured`; no privileged action possible. |
 | AAL2 admin end-to-end | **BLOCKED** | No admin user, TOTP factor, or `ADMIN_ORIGIN` secret exists. `ADMIN_ORIGIN` is checked before `authenticate`, so the 503 rows do not exercise AAL2/allowlist. |
@@ -1926,6 +1928,6 @@ These require user decisions before or during Phase 2. Recommended defaults are 
 
 **Remaining setup:** disable public signup first; create the admin user, enroll TOTP, and insert the allowlist row; set the Supabase Edge Function secret `ADMIN_ORIGIN` to the exact Phase 4 Vercel origin; verify the AAL2 rejection/acceptance matrix. No GitHub Actions secrets are required by the committed Phase 2 code because no deployment workflow was added.
 
-**Verification pass (2026-10-24):** Git branch/remote state, remote migration `20261024105232`, Edge Function versions (`config` v3, `tester-enroll` v3, `admin-api` v1) and `verify_jwt` flags, 9/9 RLS, zero client grants, schema `USAGE`, direct PostgREST denial, rollout tests (18/18), SQL security tests, public signup, and IP bucket handling were rechecked. The only remaining blockers are dashboard/secret provisioning, not known code defects.
+**Verification pass (2026-10-24):** Git branch/remote state, remote migration `20261024105232`, Edge Function versions (`config` v3, `tester-enroll` v3, `admin-api` v1) and `verify_jwt` flags, 9/9 RLS, zero client grants, schema `USAGE`, direct PostgREST denial, rollout tests (18/18), SQL security tests, public signup, IP bucket handling, the 120/10 rate-limit boundary, security/performance advisors, and unified-log secret scan were rechecked. The only remaining blockers are dashboard/secret provisioning, not known code defects.
 
 **Report:** `docs/HMXPDF_PHASE2_BACKEND_REPORT.md`.

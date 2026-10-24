@@ -404,6 +404,8 @@ Verified on the live project:
 | Client-supplied `x-forwarded-for` | Ignored/replaced by the platform in a live request; the rate limiter used the real client IP. |
 | Rate-limit bucket privacy | Source hashes the IP before storage; live bucket key is `config:<64 hex>`, not the raw IP. |
 | Config freshness | Response advertises `max_age_seconds: 60` after the `config` redeploy. |
+| Supabase security advisor | 9 INFO `rls_enabled_no_policy` findings only; expected because `anon`/`authenticated` have no schema `USAGE` or table grants. No WARN/ERROR findings. |
+| Supabase performance advisor | 6 INFO unindexed-FK and 4 INFO unused-index notices; zero-row tables, no indexes added. |
 
 The `hmx` schema is exposed to PostgREST for service-role resolution. This does **not** grant client access; the security boundary is schema `USAGE` + table grants + RLS. Any future table added to `hmx` must be followed by explicit `REVOKE ALL ... FROM public, anon, authenticated` and a grant review.
 
@@ -476,12 +478,12 @@ Do **not** add `SUPABASE_SERVICE_ROLE_KEY` to GitHub Actions, Android, or Vercel
 | Duplicate install | live HTTP | 409 `already_enrolled`; invite `used_count = 0` |
 | Tester revocation | live HTTP | flag off, `source:rollout` |
 | Invalid inputs | live HTTP | 400 for bad keys/ids/JSON/invites; 413 oversized; 405 GET |
-| Rate limiting | 130 parallel config calls | 120×200, 10×429, `Retry-After: 60` |
+| Rate limiting (re-run 2026-10-24) | 130 parallel config calls, fresh bucket | Limiter recorded 120 allowed and 10 denied; responses were 119×200, 10×429 (`Retry-After: 60`), 1 client-side transport error; bucket key was the SHA-256 hash. |
 | Admin with no credentials | live HTTP, no `apikey`/`Authorization` | platform 401 `UNAUTHORIZED_NO_AUTH_HEADER` |
 | Admin with publishable `apikey` only | live HTTP | 503 `admin_origin_not_configured` (fail closed) |
 | Admin with anon JWT | live HTTP | 503 `admin_origin_not_configured` (fail closed) |
 | Admin with malformed bearer | live HTTP | platform 401 `UNAUTHORIZED_INVALID_JWT_FORMAT` |
-| Log secret scan | unified logs query for `tester_token`, `eyJhbGci`, `service_role` | No matches |
+| Log secret scan (re-run 2026-10-24) | unified logs query for `tester_token`, `eyJhbGci`, `service_role`, `invite_code` | No token/JWT/invite values. One `service_role` match in `postgres_logs` is the migration comment text, not a credential. |
 
 ### BLOCKED
 

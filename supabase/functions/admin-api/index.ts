@@ -1,4 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { isAuthorizedAdmin } from "./authz.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -133,19 +134,6 @@ function requireObject(value: unknown, name: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function decodeJwtPayload(token: string): Record<string, unknown> | null {
-  const parts = token.split(".");
-  if (parts.length !== 3) return null;
-  try {
-    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
-    const parsed = JSON.parse(atob(padded));
-    return parsed !== null && typeof parsed === "object" ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
 function randomHex(bytes: number): string {
   const buffer = new Uint8Array(bytes);
   crypto.getRandomValues(buffer);
@@ -189,11 +177,8 @@ async function authenticate(req: Request): Promise<Admin> {
   const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
   if (!token) throw new ApiError(401, "unauthorized");
 
-  const claims = decodeJwtPayload(token);
-  if (claims === null || claims.aal !== "aal2") {
-    throw new ApiError(403, "mfa_required");
-  }
-
+  // MFA is optional for now: any valid Supabase Auth session is accepted.
+  // To require MFA again, restore the assurance-level check here.
   const { data: userData, error } = await db.auth.getUser(token);
   if (error || !userData.user) throw new ApiError(401, "unauthorized");
 
@@ -206,7 +191,7 @@ async function authenticate(req: Request): Promise<Admin> {
     console.error("admin-api: allowlist query failed", adminError.code);
     throw new ApiError(503, "service_unavailable");
   }
-  if (!admin || admin.is_active !== true || admin.role !== "admin") {
+  if (!isAuthorizedAdmin(admin)) {
     throw new ApiError(403, "forbidden");
   }
 

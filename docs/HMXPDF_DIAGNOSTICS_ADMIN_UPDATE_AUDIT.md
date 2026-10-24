@@ -1868,14 +1868,14 @@ These require user decisions before or during Phase 2. Recommended defaults are 
 
 ## Appendix D — Phase 2 implementation status (2026-10-24)
 
-**Scope actually implemented:** feature flags, deterministic gradual rollout, tester/segment targeting, admin allowlist + AAL2 enforcement, public configuration delivery, and global/per-flag kill switches. PDF upload, diagnostics ingestion, support reports, retention jobs, the Android client, and the Vercel panel were **not** implemented.
+**Scope actually implemented:** feature flags, deterministic gradual rollout, tester/segment targeting, admin allowlist enforcement (MFA optional since 2026-10-24; see Appendix E), public configuration delivery, and global/per-flag kill switches. PDF upload, diagnostics ingestion, support reports, retention jobs, the Android client, and the Vercel panel were **not** implemented.
 
 **Supabase project:** `tchoqlaqgcrbbvomaebo` — `https://tchoqlaqgcrbbvomaebo.supabase.co`. Management API reports region `ap-northeast-2`. Edge Function logs label the runtime region `ap-south-1`; this discrepancy is recorded, not resolved, and the project was not moved.
 
 **Remote changes actually applied:**
 - Migration `hmx_feature_flags` (remote version `20261024105232`) creating the `hmx` schema, 9 tables, helper functions, triggers, RLS, grants, and the PostgREST schema exposure.
 - Edge Functions `config` (v3), `tester-enroll` (v3), `admin-api` (v1).
-- No auth users, TOTP factors, admin allowlist rows, `ADMIN_ORIGIN` secret, flags, testers, or invites remain after test cleanup. `kill_switch_all = false`.
+- After test cleanup: 0 flags, testers, invites, audit rows, or rate-limit rows; `kill_switch_all = false`. One confirmed admin auth user and one active `admin` allowlist row now exist; 0 TOTP factors. `ADMIN_ORIGIN` remains unset.
 
 **Inventory:**
 
@@ -1894,7 +1894,7 @@ These require user decisions before or during Phase 2. Recommended defaults are 
 | `hmx.consume_rate_limit(...)` | Atomic fixed-window counter. |
 | `config` Edge Function | Public read-only effective configuration. |
 | `tester-enroll` Edge Function | Invite redemption; returns tester token once. |
-| `admin-api` Edge Function | Privileged action router; JWT + AAL2 + active allowlist. |
+| `admin-api` Edge Function | Privileged action router; JWT + active allowlist. MFA optional since 2026-10-24 (source only; live v1 still requires AAL2). |
 
 **Verified results:**
 
@@ -1920,16 +1920,40 @@ These require user decisions before or during Phase 2. Recommended defaults are 
 | Secret scan of logs | PASS (re-run) | No token/JWT/invite values. One `service_role` match in `postgres_logs` is the migration comment text, not a credential. |
 | Admin with no credentials | PASS | Platform returned 401 (`UNAUTHORIZED_NO_AUTH_HEADER`); malformed bearer returned 401 (`UNAUTHORIZED_INVALID_JWT_FORMAT`). |
 | Admin with publishable `apikey` only / anon JWT | PASS (fail-closed) | 503 `admin_origin_not_configured`; no privileged action possible. |
-| AAL2 admin end-to-end | **BLOCKED** | No admin user, TOTP factor, or `ADMIN_ORIGIN` secret exists. `ADMIN_ORIGIN` is checked before `authenticate`, so the 503 rows do not exercise AAL2/allowlist. |
-| Task 1 — disable public signup | **BLOCKED** | `GET /auth/v1/settings` returned `disable_signup:false`, `external.email:true`. No Management API token, CLI token file, or dashboard session is available; auth config is not a DB setting. |
-| Task 2 — provision administrator | **BLOCKED** | 0 auth users, 0 MFA factors, 0 allowlist rows. No real administrator identity/interactive TOTP; no fake user created. |
+| Admin authorization end-to-end | **BLOCKED** | Admin user and active allowlist row exist, but the user has never signed in; the MFA-optional `admin-api` is not deployed and `ADMIN_ORIGIN` is unset. `ADMIN_ORIGIN` is checked before `authenticate`, so the 503 rows do not exercise the allowlist. |
+| Task 1 — disable public signup | **PASS** | Live `disable_signup:true`, `external.email:true`; a signup probe returned `422 signup_disabled`. The setting was applied outside this agent. |
+| Task 2 — provision administrator | **PARTIAL** | Confirmed user `dd1b97b8-e938-44b1-a79e-4023bd9060e7` has an active `admin` allowlist row; `hmx.is_admin()` = true. Never signed in; 0 MFA factors (optional). Live matrix blocked on deployment/origin/session. |
 | Task 3 — configure `ADMIN_ORIGIN` | **BLOCKED** | Phase 4 Vercel deployment does not exist. Secret remains unset; no placeholder or wildcard was configured; `admin-api` returns 503. |
 | Local `supabase db reset` / Deno type-check | **NOT RUN** | No Supabase CLI, Docker, or Deno in the environment; remote deployment and HTTP execution were used instead. |
 
-**Phase 2 security conclusions:** the public configuration path returns only requested flags and never tester/admin lists; tester status is derived from a server-side token hash, not a client flag; kill switches override tester and percentage grants; missing/invalid configuration defaults off; privileged mutations are separated into `admin-api` and require platform JWT verification, `aal2`, and an active `admin_users` row. Public email signup remains enabled; the disable task is blocked on account-level dashboard/Management API access. Rate-limit buckets store SHA-256 IP hashes, not raw IPs. Admin mutation audit writes are best-effort; a DB outage could lose the audit row after a successful mutation.
+**Phase 2 security conclusions:** the public configuration path returns only requested flags and never tester/admin lists; tester status is derived from a server-side token hash, not a client flag; kill switches override tester and percentage grants; missing/invalid configuration defaults off; privileged mutations are separated into `admin-api` and require platform JWT verification plus an active `admin_users` row. Mandatory `aal2` was removed on 2026-10-24 at the user's request; MFA remains available but is optional. Public email signup is disabled and independently verified. Rate-limit buckets store SHA-256 IP hashes, not raw IPs. Admin mutation audit writes are best-effort; a DB outage could lose the audit row after a successful mutation.
 
-**Remaining setup:** obtain authenticated dashboard/Management API access and disable public signup; create the real admin user, enroll TOTP, and insert the allowlist row; set `ADMIN_ORIGIN` only after the exact Phase 4 Vercel origin exists; verify the AAL2 rejection/acceptance matrix. No credentials were requested or exposed, no placeholder origin was set, and no fake admin was created. No GitHub Actions secrets are required by the committed Phase 2 code because no deployment workflow was added.
+**Remaining setup:** deploy the updated `admin-api` after approval; set `ADMIN_ORIGIN` only after the exact Phase 4 Vercel origin exists; sign in as the provisioned admin and verify the authorization matrix including AAL1 acceptance. No credentials were requested or exposed, no placeholder origin was set, and no fake admin was created. No GitHub Actions secrets are required by the committed Phase 2 code because no deployment workflow was added.
 
-**Final setup pass (2026-10-24):** Tasks 1–3 are **BLOCKED** for the reasons above. All available non-admin checks re-ran PASS: rollout 18/18, SQL security suite, config 100%/kill-switch/tester/invalid-input live tests, direct PostgREST denial, RLS/grants, rate-limit 120/10 boundary, advisors, and log secret scan. The AAL1/AAL2/admin matrix remains **NOT RUN**. The blockers are account-level provisioning, not known code defects.
+**Final setup pass (2026-10-24):** Task 1 is **PASS**; Task 2 is **PARTIAL** (admin + allowlist ready, session/matrix pending); Task 3 is **BLOCKED** on Phase 4. All available non-admin checks re-ran PASS: rollout 18/18, admin-auth unit tests 5/5, SQL security suite, config 100%/kill-switch/tester/invalid-input live tests, direct PostgREST denial, RLS/grants, rate-limit 120/10 boundary, advisors, and log secret scan. The admin authorization matrix remains **NOT RUN**. The remaining blockers are the pending function deployment and `ADMIN_ORIGIN`, not known code defects.
 
 **Report:** `docs/HMXPDF_PHASE2_BACKEND_REPORT.md`.
+
+---
+
+## Appendix E — Temporary MFA removal (2026-10-24)
+
+**Decision:** mandatory TOTP/`aal2` is no longer required for HMXPDF admin access. The admin panel is private and personal; MFA may be re-enabled later.
+
+**Audit result:** the only enforcement point was `supabase/functions/admin-api/index.ts` `authenticate()`, which decoded the JWT and returned `403 mfa_required` unless `aal === "aal2"`. No SQL function, RLS policy, grant, Edge Function, or tester/config path depended on AAL. The deployed `config` and `tester-enroll` functions do not use Supabase user sessions.
+
+**Change:**
+- Removed the `aal2`/`mfa_required` gate and the now-unused JWT payload decoder from `admin-api`.
+- Added `supabase/functions/admin-api/authz.ts` with the retained allowlist decision: non-null row, `is_active === true`, `role === "admin"`.
+- Added `supabase/tests/admin_authz.test.ts` (5 tests): active admin allowed; inactive, non-admin, and missing rows rejected; `admin-api` source retains `auth.getUser` and the allowlist check and no longer contains `aal2`/`mfa_required`.
+- Updated `supabase/config.toml` and this report to describe MFA as optional.
+
+**Retained admin controls:** Supabase Auth JWT verification (`verify_jwt = true`), live `auth.getUser(token)` validation, active `hmx.admin_users` + `role = 'admin'` authorization, exact `ADMIN_ORIGIN` CORS/origin check, input validation, 32 KiB body limit, audit logging, rate limits, RLS, and deny-by-default grants.
+
+**Not changed:** no TOTP factor, `auth.users` row, or allowlist row was created or deleted; project-wide MFA was not disabled; no service-role key or other secret was exposed; no placeholder origin was configured.
+
+**Deployment:** the updated `admin-api` is **NOT deployed**. Live v1 still requires AAL2. Deployment awaits explicit approval. The full AAL1/allowlist authorization matrix is therefore **NOT RUN**.
+
+**Superseded:** Phase 1 design statements that describe MFA/AAL2 as mandatory (for example §10 and the Phase 4 login/enrollment flow) describe the original design and are superseded by this appendix. TOTP enrollment remains optional and available.
+
+**Provisioning status (2026-10-24):** public signup is disabled and probe-verified. One confirmed Auth user (`dd1b97b8-e938-44b1-a79e-4023bd9060e7`) exists with an active `admin` allowlist row and 0 MFA factors. The user has never signed in. The updated `admin-api` is not deployed and `ADMIN_ORIGIN` is unset, so the live AAL1/allowlist matrix is **NOT RUN**.

@@ -8,6 +8,7 @@ verify_jwt = false
 [functions.tester-enroll]
 verify_jwt = false
 
-# Privileged administration: platform JWT verification plus AAL2 + allowlist checks.
+# Privileged administration: platform JWT verification plus active allowlist checks.
+# MFA is optional; re-enable an AAL2 check in admin-api to require it.
 [functions.admin-api]
 verify_jwt = true

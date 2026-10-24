@@ -4,7 +4,7 @@
 **Branch:** `feature/hmxpdf-diagnostics-admin-updates`
 **Supabase project:** `tchoqlaqgcrbbvomaebo` — `https://tchoqlaqgcrbbvomaebo.supabase.co`
 **Project region:** `ap-northeast-2` (management API). Edge Function logs label the runtime region `ap-south-1`; this is recorded as an observation, not changed.
-**Status:** Implementation complete and deployed. The final Phase 2 setup pass on 2026-10-24 attempted the three outstanding setup tasks. Task 1 (disable public signup) remains **BLOCKED**: no authenticated Supabase Management API token, CLI token file, or dashboard session is available in this environment, and public signup is still enabled. Task 2 (admin provisioning) remains **BLOCKED** on a real administrator identity and interactive TOTP. Task 3 (`ADMIN_ORIGIN`) remains **BLOCKED** until the Phase 4 Vercel deployment exists. All available non-admin tests re-ran PASS. The AAL1/AAL2/admin matrix has not run. Phase 3 has not started.
+**Status:** Implementation complete and deployed, with one pending source change: mandatory TOTP/`aal2` was removed from `admin-api` on 2026-10-24 at the user's request. The updated function is **not deployed yet**; live `admin-api` v1 still requires `aal2`. Task 1 (disable public signup) is **PASS**: live settings report `disable_signup:true` and a signup probe returns `422 signup_disabled`. Task 2 is **PARTIAL**: one confirmed admin user exists and the active `admin` allowlist row was added, but the admin has never signed in and the live authorization matrix cannot run without the updated function and `ADMIN_ORIGIN`. Task 3 (`ADMIN_ORIGIN`) remains **BLOCKED** until the Phase 4 Vercel deployment exists. All available non-admin tests re-ran PASS; the new admin-auth unit test passes. Phase 3 has not started.
 
 ---
 
@@ -17,7 +17,7 @@ Phase 2 delivers the backend foundation for remote feature configuration:
 - Invite-only tester enrollment and server-side tester/segment grants.
 - Global and per-flag emergency kill switches with explicit precedence.
 - Public, read-only `config` delivery separated from privileged mutation endpoints.
-- Admin authentication foundation: Supabase Auth JWT, mandatory `aal2`, active `admin_users` allowlist, server-side authorization on every request.
+- Admin authentication foundation: Supabase Auth JWT, active `admin_users` allowlist, server-side authorization on every request. TOTP MFA is supported but **no longer required** (temporary, 2026-10-24).
 - RLS and deny-by-default grants for `anon`/`authenticated`; `service_role` is used only inside Edge Functions.
 
 **Explicitly out of scope and not implemented:** PDF/document upload, diagnostics ingestion, support reports, retention jobs, Android changes, Vercel admin UI, release automation, broad analytics.
@@ -33,11 +33,11 @@ Phase 2 delivers the backend foundation for remote feature configuration:
 | `hmx` functions | `is_admin`, `admin_role`, `consume_rate_limit`, `enroll_tester`, `touch_feature_flag`, `touch_system_settings`. |
 | Edge Function `config` | Deployed, version 3, `verify_jwt = false`. v3 adds the 60 s freshness cap and SHA-256 rate-limit bucket keys. |
 | Edge Function `tester-enroll` | Deployed, version 3, `verify_jwt = false`. v3 adds SHA-256 rate-limit bucket keys. |
-| Edge Function `admin-api` | Deployed, version 1, `verify_jwt = true`. |
+| Edge Function `admin-api` | Deployed, version 1, `verify_jwt = true`, still requires `aal2`. The source now makes MFA optional; the updated version is **not deployed** pending approval. |
 | Test data | Removed after the final pass. 0 flags, 0 testers, 0 invites, 0 audit rows, 0 rate-limit rows. |
 | `system_settings.kill_switch_all` | `false`. |
-| Auth users / MFA factors | 0 / 0. `hmx.admin_users` has 0 rows. No fake admin was created. |
-| Public signup | **Still enabled** (`disable_signup: false`, email provider enabled). The 2026-10-24 disable attempt was BLOCKED by missing Management API/CLI/dashboard access; see §8 and §12. |
+| Auth users / MFA factors | 1 confirmed admin (`dd1b97b8-e938-44b1-a79e-4023bd9060e7`, created 2026-10-24 14:11 UTC, never signed in) / 0 MFA factors. `hmx.admin_users` has 1 active `admin` row. No fake admin was created. |
+| Public signup | **Disabled** (`disable_signup: true`, email provider still enabled). Verified 2026-10-24 via `/auth/v1/settings` and a signup probe returning `422 signup_disabled`. The setting was applied outside this agent; no Management API/CLI token was used here. |
 | `ADMIN_ORIGIN` secret | Not set, and no placeholder was set. `admin-api` fails closed with HTTP 503 until the real Phase 4 Vercel origin is configured. |
 | Config freshness | `max_age_seconds` is **60** in source and in the live `config` v3 response (reduced from 300 for kill-switch responsiveness). |
 | Rate-limit bucket keys | SHA-256 of the client IP (pseudonymous), never the raw IP. The platform overwrites client-supplied `x-forwarded-for`; verified live. |
@@ -53,14 +53,14 @@ Android (Phase 3) ── POST /functions/v1/config ──► config ── servi
 Tester device     ── POST /functions/v1/tester-enroll ─► tester-enroll ── service_role ──► hmx
 Vercel admin (Phase 4) ── POST /functions/v1/admin-api ─► admin-api ── service_role ──► hmx
                               │
-                              └─ Supabase Auth JWT + aal2 + active admin_users row
+                              └─ Supabase Auth JWT + active admin_users row
 ```
 
 | Boundary | Rule |
 |---|---|
 | Android → `config` | No Supabase user session. `apikey` header only. Returns requested flags only. |
 | Tester → `tester-enroll` | Invite code is the credential. Rate-limited by IP and invite hash. Token returned once. |
-| Admin → `admin-api` | Platform-verified JWT, `aal2` claim, live `auth.getUser` check, active `admin_users` allowlist. Exact `ADMIN_ORIGIN` CORS. |
+| Admin → `admin-api` | Platform-verified JWT, live `auth.getUser` check, active `admin_users` allowlist. MFA optional. Exact `ADMIN_ORIGIN` CORS. |
 | Edge Functions → database | `SUPABASE_SERVICE_ROLE_KEY` is injected by Supabase. It never leaves the server runtime. |
 | Public PostgREST | `hmx` is in `db-schemas` so service-role calls resolve, but `anon`/`authenticated` have no schema `USAGE` and no table grants. |
 | Client privilege | A feature flag is **not** an authorization boundary. Any future sensitive backend action must authorize independently. |
@@ -72,7 +72,7 @@ Vercel admin (Phase 4) ── POST /functions/v1/admin-api ─► admin-api ─�
 | Client edits local preference to become tester | Tester status is resolved from a server-side SHA-256 token hash; no client role flag is trusted. | A stolen tester token can be replayed until revoked. |
 | Client guesses another user's rollout cohort | Bucket is SHA-256(`install_id:flag_key`) → 0–9999; install id is a random UUID, not a personal identifier. | A user can clear app data to obtain a new install id and re-roll. Documented. |
 | Direct PostgREST read/write of flags/admin data | RLS + no grants + no schema USAGE for `anon`/`authenticated`; verified `42501`. | A future migration that grants access would expose the schema; review grants on every change. |
-| Admin token theft / AAL1 session | `admin-api` requires `aal2`, validates the token with Auth, and checks the live allowlist. | No hardware-key requirement; TOTP phishing is out of scope. |
+| Admin token theft / password-only session | `admin-api` validates the token with Auth and checks the live active allowlist. | MFA is optional by request; a stolen AAL1 token or compromised password is sufficient for admin access. Re-enable the AAL2 check to require TOTP. |
 | Invite brute force | 32-byte random invite codes, SHA-256 at rest, IP and code rate limits, expiry and use caps. | Distributed brute force remains rate-limited per IP/code. |
 | Kill switch ignored by client | Response carries `kill_switch` and per-flag `enabled:false`; Phase 3 must fail closed. | Offline devices cannot be killed instantly. |
 | Service-role leakage | Key only in Edge Function environment; no `VITE_*`, Android, logs, or Git. | Supabase project compromise is out of scope. |
@@ -198,10 +198,11 @@ Migration: `supabase/migrations/20261024105232_hmx_feature_flags.sql`.
 **Authentication:**
 
 1. Supabase platform verifies the JWT signature.
-2. Function requires the `aal` claim to be exactly `aal2`.
-3. `auth.getUser(token)` confirms the user still exists and the session is valid.
-4. `hmx.admin_users` must contain an active row with `role = 'admin'`.
-5. `ADMIN_ORIGIN` must be configured; a browser `Origin` that does not match is rejected with `403`.
+2. `auth.getUser(token)` confirms the user still exists and the session is valid.
+3. `hmx.admin_users` must contain an active row with `role = 'admin'`.
+4. `ADMIN_ORIGIN` must be configured; a browser `Origin` that does not match is rejected with `403`.
+
+MFA is **not** required: an `aal1` password session is accepted if the user is an active allowlisted admin. TOTP remains available in Supabase and can be made mandatory again by restoring the `aal2` check in `authenticate()`.
 
 **Envelope:**
 
@@ -294,36 +295,33 @@ enabled = bucket < rollout_percentage * 100
 **Enforced by `admin-api`:**
 
 - Platform JWT verification (`verify_jwt = true`).
-- `aal2` claim required. A valid AAL1 session is rejected with `403 mfa_required`.
 - Live user lookup with `auth.getUser(token)`; deleted/banned users are rejected.
 - Active `hmx.admin_users` row with `role = 'admin'` required. Client-supplied roles/emails/IDs are ignored.
+- **MFA is optional (temporary change, 2026-10-24).** An authenticated `aal1` session is accepted. The former `403 mfa_required` gate was removed from `admin-api`; no SQL, RLS, tester, or config path ever depended on AAL.
 - Exact `ADMIN_ORIGIN` CORS and origin check.
 - Strict body/field validation and 32 KiB body limit.
 
-**Live auth setting rechecked (2026-10-24):** `GET /auth/v1/settings` returns `disable_signup: false` and `external.email: true`. Public email signup is therefore **still enabled**. This does not grant admin access because AAL2 and the allowlist are still enforced, but it is unnecessary account-creation surface for this project and must be disabled before the admin account is created.
+**Re-enabling MFA later:** in `authenticate()`, decode the JWT payload and require `aal === "aal2"` before `auth.getUser()`, then redeploy `admin-api`. Existing TOTP factors are untouched; no MFA enrollment was deleted and project-wide MFA was not disabled. The current source can stay as-is until a mandatory-MFA decision is made.
 
-**Task 1 status — BLOCKED:** this environment has no `SUPABASE_ACCESS_TOKEN`, no Supabase CLI, no CLI token file, and no authenticated dashboard session. Auth configuration is not a database setting, so no SQL workaround was attempted. No credentials were requested or exposed. Use one of the following account-level actions:
+**Change record (2026-10-24):**
 
-**Dashboard:** Authentication → Sign In / Providers → Email → turn off **Allow new users to sign up**. Do not disable the Email provider itself; the admin still needs email/password. Recheck `GET /auth/v1/settings` for `disable_signup: true`.
+- **Removed dependency:** `supabase/functions/admin-api/index.ts` required `claims.aal === "aal2"` and returned `403 mfa_required` for every other session. The unused JWT payload decoder was removed with it. This was the only AAL/MFA enforcement point in code, SQL, RLS, or functions.
+- **Retained authorization:** `auth.getUser(token)` remains; `isAuthorizedAdmin()` (new `supabase/functions/admin-api/authz.ts`) requires a non-null active `hmx.admin_users` row with `role = 'admin'`.
+- **Unchanged:** platform `verify_jwt = true`, `ADMIN_ORIGIN` CORS/origin check, input validation, body limits, audit inserts, RLS, deny-by-default grants, rate limits, rollout/version/schedule/tester/kill-switch behavior, and public read-only `config`.
+- **Not changed:** no MFA factors were deleted, no Auth provider/MFA setting was changed, and Supabase MFA remains available.
+- **Deployment:** NOT deployed. Live `admin-api` v1 still enforces AAL2 until approval.
 
-**Management API (authenticated account token):**
+**Live auth setting rechecked (2026-10-24):** `GET /auth/v1/settings` returns `disable_signup: true` and `external.email: true`. Public email signup is **disabled** while the Email provider remains enabled for admin login. A signup probe with an invalid address returned `422 signup_disabled`, confirming enforcement independently of the settings flag.
 
-```bash
-curl -X PATCH "https://api.supabase.com/v1/projects/tchoqlaqgcrbbvomaebo/config/auth" \
-  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-  -H "Content-Type: application/json" \
-  --data '{"disable_signup": true}'
-```
+**Task 1 status — PASS:** the setting was already applied outside this agent (no Management API token, CLI, or dashboard session was available here). If it is ever re-enabled, use Authentication → Sign In / Providers → Email → turn off **Allow new users to sign up**, or `PATCH /v1/projects/tchoqlaqgcrbbvomaebo/config/auth` with `{"disable_signup": true}`. Do not disable the Email provider; recheck `GET /auth/v1/settings`.
 
-Do not paste the token into chat or commit it. The token is account-level; this action is reversible.
+**Task 2 status — PARTIAL:** one confirmed Auth user exists (`dd1b97b8-e938-44b1-a79e-4023bd9060e7`, email `hm9***@gmail.com`, created 2026-10-24 14:11 UTC, never signed in, 0 MFA factors). After the user confirmed this is their administrator account, the active `admin` allowlist row was inserted; `hmx.is_admin()` returns `true`. No fake user was created and no direct `auth.users` insert was attempted. TOTP is not required. The live matrix still needs a real sign-in plus the updated function deployment and `ADMIN_ORIGIN`.
 
-**Task 2 status — BLOCKED:** re-inspected live state: 0 `auth.users`, 0 `auth.mfa_factors`, 0 `hmx.admin_users`. No fake user was created and no direct `auth.users` SQL insert was attempted. Provisioning requires the real administrator's dashboard/trusted-local participation.
+**Bootstrap steps (current state and procedure for another admin):**
 
-**Bootstrap steps (manual, after approval):**
-
-1. Disable public signup as above.
-2. Authentication → Users → **Add user**: email + strong password, enable **Auto Confirm User**. Copy the user UUID.
-3. Enroll TOTP for that user. The project dashboard does not provide a per-user TOTP enrollment screen in the current UI, so use a trusted one-off local script with `@supabase/supabase-js` and the project URL + publishable/anon key. Do not run this in an untrusted browser page and do not log the access token or TOTP secret.
+1. Public signup is disabled and verified.
+2. Admin user already created: `dd1b97b8-e938-44b1-a79e-4023bd9060e7`. For another admin, use Authentication → Users → **Add user**: email + strong password, enable **Auto Confirm User**. Copy the user UUID.
+3. **(Optional) Enroll TOTP for that user.** MFA is not required by `admin-api` now; skip this for password-only admin access. TOTP remains available and this step can be completed later. The project dashboard does not provide a per-user TOTP enrollment screen in the current UI, so use a trusted one-off local script with `@supabase/supabase-js` and the project URL + publishable/anon key. Do not run this in an untrusted browser page and do not log the access token or TOTP secret.
 
 ```ts
 // One-off local script. Do not commit real values or the resulting session.
@@ -362,11 +360,11 @@ if (verifyError) throw verifyError;
 // verified.access_token now has aal: "aal2"; use it only as a Bearer token.
 ```
 
-Supabase does not issue TOTP recovery codes. Register a second TOTP factor on a different device, or store the secret in a secure offline location; losing all factors can lock the admin out.
+Supabase does not issue TOTP recovery codes. If TOTP is enrolled, register a second factor on a different device or store the secret in a secure offline location; losing all factors can lock the admin out of MFA-protected flows.
 
-Confirm the session is AAL2 before using it: decode the access-token payload (or call `getSession`) and check that `aal === "aal2"`. Keep the password, TOTP secret, live verification code, and access token local; never paste them into chat, logs, or commits.
+Keep the password, TOTP secret, live verification code, and access token local; never paste them into chat, logs, or commits. An `aal1` password session is sufficient for the current backend; an `aal2` session also works.
 
-4. Insert the allowlist row in the SQL editor (service-role/dashboard only; never expose this SQL to clients):
+4. Allowlist row already inserted for the confirmed user (`role = 'admin'`, `is_active = true`). SQL for another admin (service-role/dashboard only; never expose this SQL to clients):
 
 ```sql
 insert into hmx.admin_users (user_id, role)
@@ -375,16 +373,20 @@ on conflict (user_id) do update set role = 'admin', is_active = true;
 ```
 
 5. Set the Edge Function secret `ADMIN_ORIGIN` only after the real Phase 4 Vercel deployment exists. Use the exact origin, including scheme, with **no trailing slash** and no wildcard. Do not set a placeholder.
-6. Verify the authorization matrix from a browser on that exact origin:
-   - AAL1 access token → `403 mfa_required`.
-   - AAL2 access token + active `admin` allowlist row → `200`.
-   - AAL2 access token + no allowlist row → `403 forbidden`.
-   - AAL2 access token + inactive allowlist row → `403 forbidden`.
+6. Verify the authorization matrix from a browser on that exact origin **after the updated `admin-api` is deployed**:
+   - Valid `aal1` access token + active `admin` allowlist row → `200`.
+   - Valid `aal2` access token + active `admin` allowlist row → `200`.
+   - No token / malformed token → `401`.
+   - Valid token + no allowlist row → `403 forbidden`.
+   - Valid token + inactive allowlist row → `403 forbidden`.
+   - Valid token + `readonly` role → `403 forbidden`.
    - Wrong `Origin` header → `403 origin_not_allowed`.
    - `settings.kill-switch` with `enabled: false` succeeds and creates an `audit.list` row.
    - A request with no `Origin` header is allowed by design; CORS is a browser boundary, not the authentication boundary.
 
-No service-role key is needed in the browser for these steps; use the Supabase dashboard, SQL editor, and the user's AAL2 session.
+The currently deployed `admin-api` v1 still requires `aal2`; until the updated function is deployed, AAL1 returns `403 mfa_required`.
+
+No service-role key is needed in the browser for these steps; use the Supabase dashboard, SQL editor, and the admin's Supabase Auth session.
 
 ---
 
@@ -417,7 +419,7 @@ Verified on the live project:
 | Rate-limit SQL boundary | 2 allowed, 3rd denied |
 | Invite SQL tests | valid enrolls once; exhausted/expired rejected; duplicate install rolls back invite use |
 | `config_version` trigger | increments on update |
-| Public signup setting | **Still enabled** (`disable_signup: false`); rechecked live on 2026-10-24. Disable task BLOCKED by missing Management API/CLI/dashboard access. Must be disabled before admin provisioning. |
+| Public signup setting | **Disabled** (`disable_signup: true`); verified live on 2026-10-24 with the settings endpoint and a `422 signup_disabled` probe. Email provider remains enabled. |
 | Client-supplied `x-forwarded-for` | Ignored/replaced by the platform in a live request; the rate limiter used the real client IP. |
 | Rate-limit bucket privacy | Source hashes the IP before storage; live bucket key is `config:<64 hex>`, not the raw IP. |
 | Config freshness | Response advertises `max_age_seconds: 60` after the `config` redeploy. |
@@ -480,10 +482,11 @@ Do **not** add `SUPABASE_SERVICE_ROLE_KEY` to GitHub Actions, Android, or Vercel
 | Test | Command / method | Result |
 |---|---|---|
 | Rollout algorithm (re-run 2026-10-24) | `node --test supabase/tests/rollout.test.ts` | 18/18 pass: 0/1/5/50/100 %, determinism, unknown flags, disabled, tester/segment, schedule, version gates, invalid percentage, kill switches, revision stability. |
+| Admin authorization predicate (2026-10-24) | `node --test supabase/tests/admin_authz.test.ts` | 5/5 pass: active admin allowed; inactive, non-admin, and missing allowlist rows rejected; `admin-api` source has no `aal2`/`mfa_required` and still calls `auth.getUser` + `isAuthorizedAdmin`. |
 | SQL constraints/RLS/rate-limit/invites/audit | `supabase/tests/hmx_security.sql` via SQL editor/MCP, transaction rolled back | `sql_security_tests_passed` (re-run 2026-10-24) |
 | Migration apply | Supabase MCP `apply_migration` | Success; 9 tables, 6 functions, RLS 9/9. |
 | Direct PostgREST denial | anon key + `Accept-Profile: hmx` | 401 `42501 permission denied for schema hmx` (re-run 2026-10-24) |
-| Public signup inspection | `GET /auth/v1/settings` with publishable key | **PASS**: `disable_signup:false`, `external.email:true`; still enabled. The disable action is BLOCKED below. |
+| Public signup disabled | `GET /auth/v1/settings` + signup probe, 2026-10-24 | **PASS**: `disable_signup:true`, `external.email:true`; probe returned `422 signup_disabled`. |
 | Client-supplied `x-forwarded-for` | live config request with a spoofed header, then inspect `rate_limits` | Platform replaced it; limiter bucketed the real client IP |
 | Rate-limit bucket privacy | live config request, then inspect `rate_limits` | Bucket key is `config:<64-hex SHA-256>`; no raw IP stored |
 | Config freshness | live config response | `max_age_seconds:60` (after `config` redeploy) |
@@ -495,7 +498,7 @@ Do **not** add `SUPABASE_SERVICE_ROLE_KEY` to GitHub Actions, Android, or Vercel
 | Duplicate install | live HTTP, final pass 2026-10-24 | 409 `already_enrolled`; invite `used_count = 0` |
 | Tester revocation | live HTTP, final pass 2026-10-24 | flag off, `source:rollout` |
 | Invalid inputs | live HTTP, final pass 2026-10-24 | 400 for bad keys/ids/JSON/invites; 413 oversized; 405 GET |
-| Rate limiting (re-run 2026-10-24) | 130 parallel config calls, fresh bucket | Limiter recorded 120 allowed and 10 denied; responses were 119×200, 10×429 (`Retry-After: 60`), 1 client-side transport error; bucket key was the SHA-256 hash. |
+| Rate limiting (re-run 2026-10-24) | 130 parallel config calls, fresh bucket | Limiter recorded 120 allowed and 10 denied: 120×200, 10×429 (`Retry-After: 60`); bucket key was the SHA-256 hash. |
 | Admin with no credentials | live HTTP, no `apikey`/`Authorization` | platform 401 `UNAUTHORIZED_NO_AUTH_HEADER` |
 | Admin with publishable `apikey` only | live HTTP | 503 `admin_origin_not_configured` (fail closed) |
 | Admin with anon JWT | live HTTP | 503 `admin_origin_not_configured` (fail closed) |
@@ -506,11 +509,10 @@ Do **not** add `SUPABASE_SERVICE_ROLE_KEY` to GitHub Actions, Android, or Vercel
 
 | Test | Reason | Next action |
 |---|---|---|
-| Disable public signup | No `SUPABASE_ACCESS_TOKEN`, CLI token file, or dashboard session is available. Auth configuration is not a database setting; no SQL workaround was attempted. | Use the dashboard action or authenticated Management API `PATCH` in §8; recheck `GET /auth/v1/settings` for `disable_signup:true`. |
-| Admin provisioning | 0 auth users, 0 MFA factors, 0 allowlist rows. No real administrator identity/interactive TOTP and no fake user was created. | Complete steps 1–4 in §8 with the real administrator. |
+| Admin sign-in and live session | The admin user has never signed in; no session/token is available to this agent, and credentials must not be shared. | The administrator signs in through the dashboard or Phase 4 panel; no test can use a borrowed token. |
 | `ADMIN_ORIGIN` / wrong-origin rejection | Phase 4 Vercel deployment does not exist. The secret is intentionally unset and no placeholder was set. Because the 503 check precedes authentication, wrong-origin behavior cannot be exercised yet. | Set the exact real origin after Phase 4; then test wrong-origin `403 origin_not_allowed`. |
-| AAL1 rejected / AAL2 accepted | No admin user, TOTP factor, or `ADMIN_ORIGIN` secret. `ADMIN_ORIGIN` is checked before `authenticate`, so the 503 rows above do not exercise the AAL2/allowlist path. | Provision the admin, enroll TOTP, set `ADMIN_ORIGIN`, rerun. |
-| Non-admin/inactive-admin rejection | Same. | Same. |
+| Admin authorization matrix (`aal1`/`aal2` accepted, allowlist denied) | The updated `admin-api` is not deployed and `ADMIN_ORIGIN` is unset. The admin exists but has no session. `ADMIN_ORIGIN` is checked before `authenticate`, so the 503 rows above do not exercise the allowlist path. | Approve deployment, set `ADMIN_ORIGIN`, sign in, rerun. |
+| Non-admin/inactive-admin/readonly rejection | Same. | Same. |
 | Audit rows on mutations | Same. | Same. |
 | Admin mutations via `admin-api` | Same. | Same. |
 
@@ -527,10 +529,10 @@ Do **not** add `SUPABASE_SERVICE_ROLE_KEY` to GitHub Actions, Android, or Vercel
 ## 13. Known risks and unresolved decisions
 
 1. **`ADMIN_ORIGIN` is unset.** `admin-api` returns 503 until the real Phase 4 Vercel origin is configured. No placeholder was set. This is intentional, but it means Phase 2 admin functionality is not usable yet.
-2. **No admin user/TOTP exists.** Rechecked live: 0 auth users, 0 MFA factors, 0 allowlist rows. The AAL2 and allowlist path is implemented but not end-to-end verified. No fake admin was created.
-3. **Public signup is still enabled.** Rechecked live (`disable_signup:false`). It does not bypass AAL2/allowlist, but it is unnecessary account-creation surface. The disable task is blocked on account-level dashboard/Management API access; disable it before creating the admin account.
+2. **Admin provisioned, session not verified.** One confirmed auth user and one active `admin` allowlist row exist (`hmx.is_admin()` = true), but the user has never signed in. The active-allowlist path is unit-tested and the SQL predicate returns true; the live HTTP matrix is not end-to-end verified. The updated `admin-api` that removes mandatory MFA is not deployed.
+3. **Public signup is disabled.** Verified live (`disable_signup:true`) with a `422 signup_disabled` probe. Email provider remains enabled for admin login.
 4. **Config is structurally validated, not schema-validated per flag.** The server enforces JSON object + 16 KiB. Phase 3 must validate each flag's typed payload and ignore unknown keys. No executable code is stored.
-5. **Audit writes are best-effort.** A DB failure after a mutation can lose the audit row. The failure is logged, but the mutation is not rolled back. A transactional mutation+audit RPC can close this gap in Phase 4 if audit completeness becomes a hard requirement. The current admin volume is zero because no admin exists.
+5. **Audit writes are best-effort.** A DB failure after a mutation can lose the audit row. The failure is logged, but the mutation is not rolled back. A transactional mutation+audit RPC can close this gap in Phase 4 if audit completeness becomes a hard requirement. No admin mutation has been exercised yet because the admin has no session.
 6. **No retention/cleanup job.** `rate_limits`, revoked testers, and invites grow until manually cleaned. Rate-limit buckets contain SHA-256 IP hashes, which are pseudonymous but should still be deleted after the longest window. Define retention before diagnostics ships.
 7. **Kill switch is not instantaneous.** Maximum practical delay is the client cache window (60 s) + refresh interval + offline time. The previous 300 s value was reduced to 60 s; clients may use a shorter interval for safety-critical flags.
 8. **Reinstall/data-clear re-rolls rollout.** A new `install_id` gets a new bucket; testers lose their token and need a new invite.
@@ -538,6 +540,7 @@ Do **not** add `SUPABASE_SERVICE_ROLE_KEY` to GitHub Actions, Android, or Vercel
 10. **Region label discrepancy.** Management API says `ap-northeast-2`; Edge Function logs label `ap-south-1`. The project was not moved. Confirm the desired region before production data exists.
 11. **Tester token is a bearer credential.** Store it in Android Keystore in Phase 3; never log it or put it in URLs. Revocation is server-side.
 12. **`last_seen_at` write per tester config request.** Acceptable at current scale; revisit if request volume grows.
+13. **MFA is optional.** A password-only `aal1` session plus an active allowlist row grants full admin access. This is the requested temporary policy. Existing TOTP factors are retained; re-enable the AAL2 check in `admin-api` to make MFA mandatory again. The change is source-only until deployed.
 
 ---
 
@@ -556,7 +559,7 @@ Do **not** add `SUPABASE_SERVICE_ROLE_KEY` to GitHub Actions, Android, or Vercel
 
 ### Vercel admin (Phase 4)
 
-- Use Supabase Auth email/password + TOTP; require an `aal2` session before calling `admin-api`.
+- Use Supabase Auth email/password. MFA is optional; do not block login on TOTP unless server-side AAL2 enforcement is re-enabled.
 - Send `Authorization: Bearer <access token>` and `apikey: <publishable key>`.
 - Set `ADMIN_ORIGIN` to the exact deployed Vercel origin; no wildcard.
 - Use the `admin-api` action envelope and render all returned strings as text (no `innerHTML`).
@@ -573,19 +576,20 @@ Phase 2 changes are committed only to `feature/hmxpdf-diagnostics-admin-updates`
 
 | Task | Status | Reason |
 |---|---|---|
-| 1. Disable public signup | **BLOCKED** | No authenticated Management API token, Supabase CLI, CLI token file, or dashboard session in this environment. Public signup remains enabled. Use the dashboard or authenticated `PATCH` in §8. |
-| 2. Provision the administrator | **BLOCKED** | No real administrator identity or interactive TOTP; 0 auth users, 0 MFA factors, 0 allowlist rows. No fake user was created. Complete §8 steps 1–4 with the real administrator. |
+| 1. Disable public signup | **PASS** | Live `disable_signup:true` and a `422 signup_disabled` probe. The setting was applied outside this agent; no Management API/CLI token was used. |
+| 2. Provision the administrator | **PARTIAL** | Confirmed user `dd1b97b8-e938-44b1-a79e-4023bd9060e7` has an active `admin` allowlist row (`is_admin()` = true). The user has not signed in, so the live matrix cannot run. TOTP is optional and not enrolled. |
 | 3. Configure `ADMIN_ORIGIN` | **BLOCKED** | The Phase 4 Vercel deployment does not exist. The secret is unset and no placeholder was set; `admin-api` remains fail-closed with 503. |
+| 4. Deploy MFA-optional `admin-api` | **PENDING APPROVAL** | Source change is complete and unit-tested; live `admin-api` v1 still requires `aal2`. No Edge Function was deployed. |
 
 No credentials were requested, exposed, or committed. No destructive production change was made. A temporary admin-authentication test against production would require temporarily changing the production CORS boundary; that is not performed. If an early test is required, use a separate staging Supabase project/branch with the same migration/functions and a local/preview origin, then delete it after the test. That requires cost/account approval.
 
 **Required next actions:**
 
-1. Disable public signup in Authentication → Sign In / Providers → Email (or `PATCH /v1/projects/<project-ref>/config/auth` with `disable_signup: true`). Recheck `GET /auth/v1/settings`.
-2. Create the admin user (auto-confirm), enroll TOTP, and confirm the session reaches `aal2`.
-3. Insert the `hmx.admin_users` allowlist row for that user.
+1. Public signup is disabled and verified; keep it disabled.
+2. The admin user exists (`dd1b97b8-e938-44b1-a79e-4023bd9060e7`) and is allowlisted. Sign in once to confirm the password works; TOTP is optional.
+3. After explicit approval, deploy the updated `admin-api` and confirm the deployed version no longer returns `mfa_required` for AAL1.
 4. Set the Supabase Edge Function secret `ADMIN_ORIGIN` to the real Phase 4 Vercel origin; do not use a placeholder.
-5. Rerun the blocked AAL1/AAL2/non-admin/inactive-admin/audit tests.
+5. Rerun the admin authorization matrix, including AAL1 acceptance, non-admin/inactive/readonly rejection, and audit-row creation.
 6. Approve Phase 2 before Phase 3 begins.
 
 **Optional, if CI deployment is wanted:** add `SUPABASE_ACCESS_TOKEN` and `SUPABASE_DB_PASSWORD` as GitHub Actions secrets, protect the deployment environment, and add a workflow that runs `supabase db push` and `supabase functions deploy`. Do not add the service-role key to CI.

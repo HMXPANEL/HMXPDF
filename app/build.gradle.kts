@@ -157,7 +157,11 @@ android {
     splits {
         abi {
             // F-Droid builds and signs one APK per version itself, so its builds skip the split.
-            isEnable = gradle.startParameter.taskNames.none { it.contains("fdroid", ignoreCase = true) }
+            // Bundles skip it too: Play handles ABI splits, and a split base resource package makes
+            // the :office_engine dynamic feature's processResources fail (no SINGLE output).
+            isEnable = gradle.startParameter.taskNames.none {
+                it.contains("fdroid", ignoreCase = true) || it.contains("bundle", ignoreCase = true)
+            }
             reset()
             include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
             isUniversalApk = true

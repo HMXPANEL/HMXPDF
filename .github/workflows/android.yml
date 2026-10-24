@@ -122,7 +122,15 @@ jobs:
             rm -f "$KEYSTORE_PATH"
             exit 1
           fi
+          EXPECTED_SHA256=$(keytool -list -v -keystore "$KEYSTORE_PATH" -storepass "$CLEARPDF_UPLOAD_STORE_PASSWORD" -alias "$CLEARPDF_UPLOAD_KEY_ALIAS" 2>/dev/null \
+            | sed -n 's/^[[:space:]]*SHA256: //p' | head -1 | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          if [ -z "$EXPECTED_SHA256" ]; then
+            echo "::error title=Invalid keystore or credentials::Could not read the signing certificate's SHA-256 fingerprint."
+            rm -f "$KEYSTORE_PATH"
+            exit 1
+          fi
           echo "CLEARPDF_UPLOAD_STORE_FILE=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+          echo "CLEARPDF_EXPECTED_CERT_SHA256=$EXPECTED_SHA256" >> "$GITHUB_ENV"
       - name: Build signed release APK
         env:
           CLEARPDF_UPLOAD_STORE_PASSWORD: ${{ secrets.CLEARPDF_UPLOAD_STORE_PASSWORD }}
@@ -143,11 +151,10 @@ jobs:
           --stacktrace
           -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8"
           -Pkotlin.daemon.jvmargs=-Xmx4g
-      - name: Verify every release APK is not debug-signed
+      - name: Verify every release APK is signed with the release key
         run: |
           mapfile -t APKS < <(find app/build/outputs/apk/play/release -name '*.apk' -print)
-          echo "Found ${#APKS[@]} release APK(s): ${APKS[*]}"
-          find app/build/outputs -maxdepth 4 -type f -name '*.apk' -print || true
+          echo "Found ${#APKS[@]} release APK(s)"
           test "${#APKS[@]}" -gt 0
           BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           for APK in "${APKS[@]}"; do
@@ -156,13 +163,20 @@ jobs:
               echo "$CERTS" >&2
               exit 1
             fi
-            if ! echo "$CERTS" | grep -q 'Signer #1 certificate DN:'; then
+            if ! echo "$CERTS" | grep -q 'certificate DN:'; then
               echo "No signer certificate in apksigner output for $APK" >&2
               echo "$CERTS" >&2
               exit 1
             fi
             if echo "$CERTS" | grep -qi 'CN=Android Debug'; then
               echo "Release APK is debug-signed: $APK" >&2
+              exit 1
+            fi
+            APK_SHA256=$(echo "$CERTS" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1 | tr -d ':' | tr '[:upper:]' '[:lower:]')
+            if [ "$APK_SHA256" != "$CLEARPDF_EXPECTED_CERT_SHA256" ]; then
+              echo "Release APK signing certificate does not match the configured keystore: $APK" >&2
+              echo "APK SHA-256:      $APK_SHA256" >&2
+              echo "Keystore SHA-256: $CLEARPDF_EXPECTED_CERT_SHA256" >&2
               exit 1
             fi
           done

@@ -4,7 +4,7 @@
 **Branch:** `feature/hmxpdf-diagnostics-admin-updates`
 **Supabase project:** `tchoqlaqgcrbbvomaebo` — `https://tchoqlaqgcrbbvomaebo.supabase.co`
 **Project region:** `ap-northeast-2` (management API). Edge Function logs label the runtime region `ap-south-1`; this is recorded as an observation, not changed.
-**Status:** Implementation complete and deployed. A second verification pass on 2026-10-24 rechecked Git/remote state, the live migration, deployed functions, RLS/grants, public signup, rate-limit IP handling, and the available tests. Public signup is **enabled** and must be disabled before admin provisioning. Admin AAL2 end-to-end verification remains **BLOCKED** on admin/TOTP/`ADMIN_ORIGIN` provisioning. Phase 3 has not started.
+**Status:** Implementation complete and deployed. The final Phase 2 setup pass on 2026-10-24 attempted the three outstanding setup tasks. Task 1 (disable public signup) remains **BLOCKED**: no authenticated Supabase Management API token, CLI token file, or dashboard session is available in this environment, and public signup is still enabled. Task 2 (admin provisioning) remains **BLOCKED** on a real administrator identity and interactive TOTP. Task 3 (`ADMIN_ORIGIN`) remains **BLOCKED** until the Phase 4 Vercel deployment exists. All available non-admin tests re-ran PASS. The AAL1/AAL2/admin matrix has not run. Phase 3 has not started.
 
 ---
 
@@ -34,11 +34,11 @@ Phase 2 delivers the backend foundation for remote feature configuration:
 | Edge Function `config` | Deployed, version 3, `verify_jwt = false`. v3 adds the 60 s freshness cap and SHA-256 rate-limit bucket keys. |
 | Edge Function `tester-enroll` | Deployed, version 3, `verify_jwt = false`. v3 adds SHA-256 rate-limit bucket keys. |
 | Edge Function `admin-api` | Deployed, version 1, `verify_jwt = true`. |
-| Test data | Removed after tests. 0 flags, 0 testers, 0 invites, 0 audit rows, 0 rate-limit rows. |
+| Test data | Removed after the final pass. 0 flags, 0 testers, 0 invites, 0 audit rows, 0 rate-limit rows. |
 | `system_settings.kill_switch_all` | `false`. |
-| Auth users / MFA factors | None created. |
-| Public signup | **Enabled** (`disable_signup: false`, email provider enabled). Not changed; must be disabled in the dashboard before creating the admin. |
-| `ADMIN_ORIGIN` secret | Not set. `admin-api` fails closed with HTTP 503 until it is configured. |
+| Auth users / MFA factors | 0 / 0. `hmx.admin_users` has 0 rows. No fake admin was created. |
+| Public signup | **Still enabled** (`disable_signup: false`, email provider enabled). The 2026-10-24 disable attempt was BLOCKED by missing Management API/CLI/dashboard access; see §8 and §12. |
+| `ADMIN_ORIGIN` secret | Not set, and no placeholder was set. `admin-api` fails closed with HTTP 503 until the real Phase 4 Vercel origin is configured. |
 | Config freshness | `max_age_seconds` is **60** in source and in the live `config` v3 response (reduced from 300 for kill-switch responsiveness). |
 | Rate-limit bucket keys | SHA-256 of the client IP (pseudonymous), never the raw IP. The platform overwrites client-supplied `x-forwarded-for`; verified live. |
 
@@ -300,9 +300,24 @@ enabled = bucket < rollout_percentage * 100
 - Exact `ADMIN_ORIGIN` CORS and origin check.
 - Strict body/field validation and 32 KiB body limit.
 
-**Live auth setting verified (2026-10-24):** `GET /auth/v1/settings` returns `disable_signup: false` and `external.email: true`. Public email signup is therefore **enabled**. This does not grant admin access because AAL2 and the allowlist are still enforced, but it is unnecessary account-creation surface for this project and must be disabled before the admin account is created. It was **not changed** during this verification pass.
+**Live auth setting rechecked (2026-10-24):** `GET /auth/v1/settings` returns `disable_signup: false` and `external.email: true`. Public email signup is therefore **still enabled**. This does not grant admin access because AAL2 and the allowlist are still enforced, but it is unnecessary account-creation surface for this project and must be disabled before the admin account is created.
 
-**Exact dashboard action:** Authentication → Sign In / Providers → Email → turn off **Allow new users to sign up**. Do not disable the Email provider itself; the admin still needs email/password. The same setting is `disable_signup` in `PATCH /v1/projects/<project-ref>/config/auth`. Recheck `GET /auth/v1/settings` for `disable_signup: true`.
+**Task 1 status — BLOCKED:** this environment has no `SUPABASE_ACCESS_TOKEN`, no Supabase CLI, no CLI token file, and no authenticated dashboard session. Auth configuration is not a database setting, so no SQL workaround was attempted. No credentials were requested or exposed. Use one of the following account-level actions:
+
+**Dashboard:** Authentication → Sign In / Providers → Email → turn off **Allow new users to sign up**. Do not disable the Email provider itself; the admin still needs email/password. Recheck `GET /auth/v1/settings` for `disable_signup: true`.
+
+**Management API (authenticated account token):**
+
+```bash
+curl -X PATCH "https://api.supabase.com/v1/projects/tchoqlaqgcrbbvomaebo/config/auth" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data '{"disable_signup": true}'
+```
+
+Do not paste the token into chat or commit it. The token is account-level; this action is reversible.
+
+**Task 2 status — BLOCKED:** re-inspected live state: 0 `auth.users`, 0 `auth.mfa_factors`, 0 `hmx.admin_users`. No fake user was created and no direct `auth.users` SQL insert was attempted. Provisioning requires the real administrator's dashboard/trusted-local participation.
 
 **Bootstrap steps (manual, after approval):**
 
@@ -348,6 +363,8 @@ if (verifyError) throw verifyError;
 ```
 
 Supabase does not issue TOTP recovery codes. Register a second TOTP factor on a different device, or store the secret in a secure offline location; losing all factors can lock the admin out.
+
+Confirm the session is AAL2 before using it: decode the access-token payload (or call `getSession`) and check that `aal === "aal2"`. Keep the password, TOTP secret, live verification code, and access token local; never paste them into chat, logs, or commits.
 
 4. Insert the allowlist row in the SQL editor (service-role/dashboard only; never expose this SQL to clients):
 
@@ -400,7 +417,7 @@ Verified on the live project:
 | Rate-limit SQL boundary | 2 allowed, 3rd denied |
 | Invite SQL tests | valid enrolls once; exhausted/expired rejected; duplicate install rolls back invite use |
 | `config_version` trigger | increments on update |
-| Public signup setting | **Enabled** (`disable_signup: false`); verified via `GET /auth/v1/settings`. Must be disabled before admin provisioning. |
+| Public signup setting | **Still enabled** (`disable_signup: false`); rechecked live on 2026-10-24. Disable task BLOCKED by missing Management API/CLI/dashboard access. Must be disabled before admin provisioning. |
 | Client-supplied `x-forwarded-for` | Ignored/replaced by the platform in a live request; the rate limiter used the real client IP. |
 | Rate-limit bucket privacy | Source hashes the IP before storage; live bucket key is `config:<64 hex>`, not the raw IP. |
 | Config freshness | Response advertises `max_age_seconds: 60` after the `config` redeploy. |
@@ -462,22 +479,22 @@ Do **not** add `SUPABASE_SERVICE_ROLE_KEY` to GitHub Actions, Android, or Vercel
 
 | Test | Command / method | Result |
 |---|---|---|
-| Rollout algorithm | `node --test supabase/tests/rollout.test.ts` | 18/18 pass: 0/1/5/50/100 %, determinism, unknown flags, disabled, tester/segment, schedule, version gates, invalid percentage, kill switches, revision stability. |
+| Rollout algorithm (re-run 2026-10-24) | `node --test supabase/tests/rollout.test.ts` | 18/18 pass: 0/1/5/50/100 %, determinism, unknown flags, disabled, tester/segment, schedule, version gates, invalid percentage, kill switches, revision stability. |
 | SQL constraints/RLS/rate-limit/invites/audit | `supabase/tests/hmx_security.sql` via SQL editor/MCP, transaction rolled back | `sql_security_tests_passed` (re-run 2026-10-24) |
 | Migration apply | Supabase MCP `apply_migration` | Success; 9 tables, 6 functions, RLS 9/9. |
 | Direct PostgREST denial | anon key + `Accept-Profile: hmx` | 401 `42501 permission denied for schema hmx` (re-run 2026-10-24) |
-| Public signup inspection | `GET /auth/v1/settings` with publishable key | `disable_signup:false`, `external.email:true`; **enabled**, remediation pending |
+| Public signup inspection | `GET /auth/v1/settings` with publishable key | **PASS**: `disable_signup:false`, `external.email:true`; still enabled. The disable action is BLOCKED below. |
 | Client-supplied `x-forwarded-for` | live config request with a spoofed header, then inspect `rate_limits` | Platform replaced it; limiter bucketed the real client IP |
 | Rate-limit bucket privacy | live config request, then inspect `rate_limits` | Bucket key is `config:<64-hex SHA-256>`; no raw IP stored |
 | Config freshness | live config response | `max_age_seconds:60` (after `config` redeploy) |
-| Config 100 % + config payload | live HTTP | `enabled:true`, `source:rollout`, `config:{value:1}` |
-| Global kill switch | live HTTP after SQL toggle | `enabled:false`, `source:global_kill_switch`, `kill_switch:true`, new revision |
-| Tester enrollment | live HTTP | 201, token returned once, segment `default` |
-| Tester grant at 0 % | live HTTP | `enabled:true`, `source:tester` |
-| Invite reuse | live HTTP | 404 `invalid_invite` |
-| Duplicate install | live HTTP | 409 `already_enrolled`; invite `used_count = 0` |
-| Tester revocation | live HTTP | flag off, `source:rollout` |
-| Invalid inputs | live HTTP | 400 for bad keys/ids/JSON/invites; 413 oversized; 405 GET |
+| Config 100 % + config payload | live HTTP, final pass 2026-10-24 | `enabled:true`, `source:rollout`, `config:{value:"final"}`; unknown flag absent |
+| Global kill switch | live HTTP after SQL toggle, final pass 2026-10-24 | `enabled:false`, `source:global_kill_switch`, `kill_switch:true`, revision changed; restored to `false` with the original revision |
+| Tester enrollment | live HTTP, final pass 2026-10-24 | 201, token length 64, segment `default` |
+| Tester grant at 0 % | live HTTP, final pass 2026-10-24 | `enabled:true`, `source:tester` |
+| Invite reuse | live HTTP, final pass 2026-10-24 | 404 `invalid_invite` |
+| Duplicate install | live HTTP, final pass 2026-10-24 | 409 `already_enrolled`; invite `used_count = 0` |
+| Tester revocation | live HTTP, final pass 2026-10-24 | flag off, `source:rollout` |
+| Invalid inputs | live HTTP, final pass 2026-10-24 | 400 for bad keys/ids/JSON/invites; 413 oversized; 405 GET |
 | Rate limiting (re-run 2026-10-24) | 130 parallel config calls, fresh bucket | Limiter recorded 120 allowed and 10 denied; responses were 119×200, 10×429 (`Retry-After: 60`), 1 client-side transport error; bucket key was the SHA-256 hash. |
 | Admin with no credentials | live HTTP, no `apikey`/`Authorization` | platform 401 `UNAUTHORIZED_NO_AUTH_HEADER` |
 | Admin with publishable `apikey` only | live HTTP | 503 `admin_origin_not_configured` (fail closed) |
@@ -489,6 +506,9 @@ Do **not** add `SUPABASE_SERVICE_ROLE_KEY` to GitHub Actions, Android, or Vercel
 
 | Test | Reason | Next action |
 |---|---|---|
+| Disable public signup | No `SUPABASE_ACCESS_TOKEN`, CLI token file, or dashboard session is available. Auth configuration is not a database setting; no SQL workaround was attempted. | Use the dashboard action or authenticated Management API `PATCH` in §8; recheck `GET /auth/v1/settings` for `disable_signup:true`. |
+| Admin provisioning | 0 auth users, 0 MFA factors, 0 allowlist rows. No real administrator identity/interactive TOTP and no fake user was created. | Complete steps 1–4 in §8 with the real administrator. |
+| `ADMIN_ORIGIN` / wrong-origin rejection | Phase 4 Vercel deployment does not exist. The secret is intentionally unset and no placeholder was set. Because the 503 check precedes authentication, wrong-origin behavior cannot be exercised yet. | Set the exact real origin after Phase 4; then test wrong-origin `403 origin_not_allowed`. |
 | AAL1 rejected / AAL2 accepted | No admin user, TOTP factor, or `ADMIN_ORIGIN` secret. `ADMIN_ORIGIN` is checked before `authenticate`, so the 503 rows above do not exercise the AAL2/allowlist path. | Provision the admin, enroll TOTP, set `ADMIN_ORIGIN`, rerun. |
 | Non-admin/inactive-admin rejection | Same. | Same. |
 | Audit rows on mutations | Same. | Same. |
@@ -501,15 +521,14 @@ Do **not** add `SUPABASE_SERVICE_ROLE_KEY` to GitHub Actions, Android, or Vercel
 | `supabase db reset` from empty local database | No Supabase CLI, Docker, or local Postgres. Remote apply succeeded; local reproducibility not executed. |
 | Deno type-check/unit tests | Deno is not installed. Functions were deployed and executed against the live project; Node tests cover the rollout module. |
 | Android regression/build | No Android changes in Phase 2; no Android SDK/emulator in this environment. |
-| Disable public signup | Verified enabled but not changed; requires the dashboard/Management API action above. |
 
 ---
 
 ## 13. Known risks and unresolved decisions
 
-1. **`ADMIN_ORIGIN` is unset.** `admin-api` returns 503 until it is configured. This is intentional, but it means Phase 2 admin functionality is not usable yet.
-2. **No admin user/TOTP exists.** The AAL2 and allowlist path is implemented but not end-to-end verified.
-3. **Public signup is enabled.** Verified live (`disable_signup:false`). It does not bypass AAL2/allowlist, but it is unnecessary account-creation surface. Disable it before creating the admin account.
+1. **`ADMIN_ORIGIN` is unset.** `admin-api` returns 503 until the real Phase 4 Vercel origin is configured. No placeholder was set. This is intentional, but it means Phase 2 admin functionality is not usable yet.
+2. **No admin user/TOTP exists.** Rechecked live: 0 auth users, 0 MFA factors, 0 allowlist rows. The AAL2 and allowlist path is implemented but not end-to-end verified. No fake admin was created.
+3. **Public signup is still enabled.** Rechecked live (`disable_signup:false`). It does not bypass AAL2/allowlist, but it is unnecessary account-creation surface. The disable task is blocked on account-level dashboard/Management API access; disable it before creating the admin account.
 4. **Config is structurally validated, not schema-validated per flag.** The server enforces JSON object + 16 KiB. Phase 3 must validate each flag's typed payload and ignore unknown keys. No executable code is stored.
 5. **Audit writes are best-effort.** A DB failure after a mutation can lose the audit row. The failure is logged, but the mutation is not rolled back. A transactional mutation+audit RPC can close this gap in Phase 4 if audit completeness becomes a hard requirement. The current admin volume is zero because no admin exists.
 6. **No retention/cleanup job.** `rate_limits`, revoked testers, and invites grow until manually cleaned. Rate-limit buckets contain SHA-256 IP hashes, which are pseudonymous but should still be deleted after the longest window. Define retention before diagnostics ships.
@@ -549,6 +568,16 @@ Do **not** add `SUPABASE_SERVICE_ROLE_KEY` to GitHub Actions, Android, or Vercel
 ## 15. Git and next steps
 
 Phase 2 changes are committed only to `feature/hmxpdf-diagnostics-admin-updates`; `main`/`origin/main` are untouched. The exact commit hash and push status are reported in the Phase 2 handoff message.
+
+**Setup task status (2026-10-24):**
+
+| Task | Status | Reason |
+|---|---|---|
+| 1. Disable public signup | **BLOCKED** | No authenticated Management API token, Supabase CLI, CLI token file, or dashboard session in this environment. Public signup remains enabled. Use the dashboard or authenticated `PATCH` in §8. |
+| 2. Provision the administrator | **BLOCKED** | No real administrator identity or interactive TOTP; 0 auth users, 0 MFA factors, 0 allowlist rows. No fake user was created. Complete §8 steps 1–4 with the real administrator. |
+| 3. Configure `ADMIN_ORIGIN` | **BLOCKED** | The Phase 4 Vercel deployment does not exist. The secret is unset and no placeholder was set; `admin-api` remains fail-closed with 503. |
+
+No credentials were requested, exposed, or committed. No destructive production change was made. A temporary admin-authentication test against production would require temporarily changing the production CORS boundary; that is not performed. If an early test is required, use a separate staging Supabase project/branch with the same migration/functions and a local/preview origin, then delete it after the test. That requires cost/account approval.
 
 **Required next actions:**
 

@@ -1906,12 +1906,12 @@ These require user decisions before or during Phase 2. Recommended defaults are 
 | service_role operations | PASS | 63 table grants; `config` function read `hmx` successfully via PostgREST. |
 | Rollout unit tests | PASS | `node --test supabase/tests/rollout.test.ts`: 18/18. |
 | SQL constraints/RLS/rate-limit/invite tests | PASS | `supabase/tests/hmx_security.sql` transaction rolled back; printed `sql_security_tests_passed`. |
-| Config 0%/100%/unknown flag | PASS | Unknown flags absent; 100% enabled; 0% off. |
-| Global kill switch precedence | PASS | HTTP response changed to `enabled:false`, `source:global_kill_switch`, new revision. |
-| Tester enrollment + tester grant at 0% | PASS | 201 token once; config returned `source:tester`, `enabled:true`. |
-| Invite reuse / duplicate install | PASS | 404 `invalid_invite`; 409 `already_enrolled`; invite `used_count` stayed 0. |
-| Tester revocation | PASS | Revoked token no longer grants the flag; response `source:rollout`, `enabled:false`. |
-| Invalid inputs | PASS | 400 for bad keys/ids/JSON/invites; 413 for oversized bodies; 405 for GET. |
+| Config 0%/100%/unknown flag | PASS (re-run 2026-10-24) | Unknown flags absent; 100% enabled with `config:{value:"final"}`; 0% off. |
+| Global kill switch precedence | PASS (re-run 2026-10-24) | HTTP response changed to `enabled:false`, `source:global_kill_switch`, new revision; restored with the original revision. |
+| Tester enrollment + tester grant at 0% | PASS (re-run 2026-10-24) | 201, token length 64; config returned `source:tester`, `enabled:true`. |
+| Invite reuse / duplicate install | PASS (re-run 2026-10-24) | 404 `invalid_invite`; 409 `already_enrolled`; invite `used_count` stayed 0. |
+| Tester revocation | PASS (re-run 2026-10-24) | Revoked token no longer grants the flag; response `source:rollout`, `enabled:false`. |
+| Invalid inputs | PASS (re-run 2026-10-24) | 400 for bad keys/ids/JSON/invites; 413 for oversized bodies; 405 for GET. |
 | Rate limiting | PASS (re-run) | 130 parallel config calls, fresh bucket → limiter recorded 120 allowed/10 denied; 119×200, 10×429 (`Retry-After: 60`), 1 client-side transport error; hashed bucket key. |
 | Rate-limit IP handling | PASS | A client-supplied `x-forwarded-for` was replaced by the platform; `rate_limits` stored a SHA-256 IP bucket key, not the raw IP. |
 | Config freshness | PASS | `max_age_seconds` is 60 in source and in the live `config` v3 response (reduced from 300). |
@@ -1921,13 +1921,15 @@ These require user decisions before or during Phase 2. Recommended defaults are 
 | Admin with no credentials | PASS | Platform returned 401 (`UNAUTHORIZED_NO_AUTH_HEADER`); malformed bearer returned 401 (`UNAUTHORIZED_INVALID_JWT_FORMAT`). |
 | Admin with publishable `apikey` only / anon JWT | PASS (fail-closed) | 503 `admin_origin_not_configured`; no privileged action possible. |
 | AAL2 admin end-to-end | **BLOCKED** | No admin user, TOTP factor, or `ADMIN_ORIGIN` secret exists. `ADMIN_ORIGIN` is checked before `authenticate`, so the 503 rows do not exercise AAL2/allowlist. |
-| Public signup setting | **PASS (verified enabled)** | `GET /auth/v1/settings` returned `disable_signup:false`, `external.email:true`. Not changed; must be disabled before admin provisioning. |
+| Task 1 — disable public signup | **BLOCKED** | `GET /auth/v1/settings` returned `disable_signup:false`, `external.email:true`. No Management API token, CLI token file, or dashboard session is available; auth config is not a DB setting. |
+| Task 2 — provision administrator | **BLOCKED** | 0 auth users, 0 MFA factors, 0 allowlist rows. No real administrator identity/interactive TOTP; no fake user created. |
+| Task 3 — configure `ADMIN_ORIGIN` | **BLOCKED** | Phase 4 Vercel deployment does not exist. Secret remains unset; no placeholder or wildcard was configured; `admin-api` returns 503. |
 | Local `supabase db reset` / Deno type-check | **NOT RUN** | No Supabase CLI, Docker, or Deno in the environment; remote deployment and HTTP execution were used instead. |
 
-**Phase 2 security conclusions:** the public configuration path returns only requested flags and never tester/admin lists; tester status is derived from a server-side token hash, not a client flag; kill switches override tester and percentage grants; missing/invalid configuration defaults off; privileged mutations are separated into `admin-api` and require platform JWT verification, `aal2`, and an active `admin_users` row. Public email signup is currently enabled and should be disabled before admin provisioning. Rate-limit buckets store SHA-256 IP hashes, not raw IPs. Admin mutation audit writes are best-effort; a DB outage could lose the audit row after a successful mutation.
+**Phase 2 security conclusions:** the public configuration path returns only requested flags and never tester/admin lists; tester status is derived from a server-side token hash, not a client flag; kill switches override tester and percentage grants; missing/invalid configuration defaults off; privileged mutations are separated into `admin-api` and require platform JWT verification, `aal2`, and an active `admin_users` row. Public email signup remains enabled; the disable task is blocked on account-level dashboard/Management API access. Rate-limit buckets store SHA-256 IP hashes, not raw IPs. Admin mutation audit writes are best-effort; a DB outage could lose the audit row after a successful mutation.
 
-**Remaining setup:** disable public signup first; create the admin user, enroll TOTP, and insert the allowlist row; set the Supabase Edge Function secret `ADMIN_ORIGIN` to the exact Phase 4 Vercel origin; verify the AAL2 rejection/acceptance matrix. No GitHub Actions secrets are required by the committed Phase 2 code because no deployment workflow was added.
+**Remaining setup:** obtain authenticated dashboard/Management API access and disable public signup; create the real admin user, enroll TOTP, and insert the allowlist row; set `ADMIN_ORIGIN` only after the exact Phase 4 Vercel origin exists; verify the AAL2 rejection/acceptance matrix. No credentials were requested or exposed, no placeholder origin was set, and no fake admin was created. No GitHub Actions secrets are required by the committed Phase 2 code because no deployment workflow was added.
 
-**Verification pass (2026-10-24):** Git branch/remote state, remote migration `20261024105232`, Edge Function versions (`config` v3, `tester-enroll` v3, `admin-api` v1) and `verify_jwt` flags, 9/9 RLS, zero client grants, schema `USAGE`, direct PostgREST denial, rollout tests (18/18), SQL security tests, public signup, IP bucket handling, the 120/10 rate-limit boundary, security/performance advisors, and unified-log secret scan were rechecked. The only remaining blockers are dashboard/secret provisioning, not known code defects.
+**Final setup pass (2026-10-24):** Tasks 1–3 are **BLOCKED** for the reasons above. All available non-admin checks re-ran PASS: rollout 18/18, SQL security suite, config 100%/kill-switch/tester/invalid-input live tests, direct PostgREST denial, RLS/grants, rate-limit 120/10 boundary, advisors, and log secret scan. The AAL1/AAL2/admin matrix remains **NOT RUN**. The blockers are account-level provisioning, not known code defects.
 
 **Report:** `docs/HMXPDF_PHASE2_BACKEND_REPORT.md`.

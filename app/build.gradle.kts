@@ -222,6 +222,8 @@ android {
         checkReleaseBuilds = true
         // Existing debt is recorded once; new lint errors still fail the build.
         baseline = file("lint-baseline.xml")
+        // Scopes MissingTranslation off for the English-first Phase 3 strings only.
+        lintConfig = file("lint.xml")
     }
 }
 

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lint>
+    <!--
+      Phase 3 privacy/report strings are English-first: machine-translating privacy disclosures
+      is not acceptable, so missing locale entries fall back to English. Remove this ignore once
+      the strings in values/strings_phase3.xml have reviewed translations; all other resource
+      files keep the MissingTranslation check.
+    -->
+    <issue id="MissingTranslation">
+        <ignore path="src/main/res/values/strings_phase3.xml" />
+    </issue>
+</lint>

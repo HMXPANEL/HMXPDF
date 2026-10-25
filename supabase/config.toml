@@ -8,6 +8,10 @@ verify_jwt = false
 [functions.tester-enroll]
 verify_jwt = false
 
+# Explicit user-submitted reports: public write-only endpoint, rate-limited.
+[functions.report-submit]
+verify_jwt = false
+
 # Privileged administration: platform JWT verification plus active allowlist checks.
 # MFA is optional; re-enable an AAL2 check in admin-api to require it.
 [functions.admin-api]

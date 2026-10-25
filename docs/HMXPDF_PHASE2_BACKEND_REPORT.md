@@ -119,14 +119,13 @@ Migration: `supabase/migrations/20261024105232_hmx_feature_flags.sql`.
 ```json
 {
   "keys": ["feature.example"],
-  "install_id": "00000000-0000-4000-8000-000000000000",
   "app_version_code": 42,
   "tester_token": "64-hex-characters"
 }
 ```
 
 - `keys`: required, 1–50 unique keys matching `^[a-z][a-z0-9_.-]{2,63}$`.
-- `install_id`: optional UUID; required for fractional rollout.
+- `install_id`: **not accepted.** The strict request contract on `feature/hmxpdf-diagnostics-admin-updates` rejects any request containing `install_id` with `400 install_id_not_allowed`. The deployed `config` v3 still accepts an optional `install_id` for fractional rollout; that behavior is superseded and must not be reintroduced. Fractional rollout is unavailable to clients until a separate privacy-preserving cohort key is approved; use 0%/100%, tester/segment grants, or schedules.
 - `app_version_code`: optional integer 0–2,100,000,000.
 - `tester_token`: optional 64 hex characters. A malformed token returns `400 invalid_tester_token`; a well-formed but unknown or revoked token is accepted but does not grant tester status.
 - Body limit: 4 KiB. Methods: `POST`/`OPTIONS`. Rate limit: 120 requests/minute/IP → `429` with `Retry-After: 60`. The limiter bucket stores a SHA-256 hash of the IP, not the IP itself.

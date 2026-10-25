@@ -4,20 +4,15 @@ import {
   revisionFor,
   type FlagRow,
 } from "./rollout.ts";
+import { parseConfigRequest } from "./request.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
 const MAX_BODY_BYTES = 4096;
-const MAX_KEYS = 50;
 // Keep emergency changes responsive without forcing a request per app launch.
 const MAX_AGE_SECONDS = 60;
 const RATE_LIMIT_PER_MINUTE = 120;
-
-const KEY_PATTERN = /^[a-z][a-z0-9_.-]{2,63}$/;
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const TOKEN_PATTERN = /^[0-9a-f]{64}$/i;
 
 const CORS_HEADERS = {
   "access-control-allow-origin": "*",
@@ -74,20 +69,6 @@ async function readJson(req: Request): Promise<{ body: Record<string, unknown> |
   }
 }
 
-function validVersionCode(value: unknown): value is number {
-  return Number.isInteger(value) && (value as number) >= 0 && (value as number) <= 2_100_000_000;
-}
-
-function parseKeys(value: unknown): string[] | null {
-  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_KEYS) return null;
-  const keys = new Set<string>();
-  for (const item of value) {
-    if (typeof item !== "string" || !KEY_PATTERN.test(item)) return null;
-    keys.add(item);
-  }
-  return [...keys];
-}
-
 Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
   if (req.method !== "POST") return fail(405, "method_not_allowed", { allow: "POST, OPTIONS" });
@@ -102,23 +83,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (parsed.body === null) return fail(400, "invalid_body");
   const body = parsed.body;
 
-  const keys = parseKeys(body.keys);
-  if (keys === null) return fail(400, "invalid_keys");
-
-  const installId = body.install_id;
-  if (installId !== undefined && (typeof installId !== "string" || !UUID_PATTERN.test(installId))) {
-    return fail(400, "invalid_install_id");
-  }
-
-  const appVersionCode = body.app_version_code;
-  if (appVersionCode !== undefined && appVersionCode !== null && !validVersionCode(appVersionCode)) {
-    return fail(400, "invalid_app_version_code");
-  }
-
-  const testerToken = body.tester_token;
-  if (testerToken !== undefined && (typeof testerToken !== "string" || !TOKEN_PATTERN.test(testerToken))) {
-    return fail(400, "invalid_tester_token");
-  }
+  const parsedRequest = parseConfigRequest(body);
+  if (!parsedRequest.ok) return fail(400, parsedRequest.error);
+  const { keys, appVersionCode, testerToken } = parsedRequest.value;
 
   const ip = (req.headers.get("x-forwarded-for") ?? "").split(",")[0].trim() || "unknown";
   // Store only a pseudonymous bucket key, never the raw client IP.
@@ -197,8 +164,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   const effective = await evaluateFlags((flagRows ?? []) as FlagRow[], {
-    installId: typeof installId === "string" ? installId : null,
-    appVersionCode: validVersionCode(appVersionCode) ? appVersionCode : null,
+    // Install IDs are accepted only by report-submit. Config never receives one,
+    // so fractional rollouts fail closed with missing_install_id.
+    installId: null,
+    appVersionCode,
     now: new Date(),
     globalKillSwitch,
     testerId,

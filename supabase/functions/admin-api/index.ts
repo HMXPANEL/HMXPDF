@@ -1,5 +1,12 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { isAuthorizedAdmin } from "./authz.ts";
+import {
+  parseReportId,
+  parseReportListQuery,
+  parseReportPurge,
+  parseReportUpdate,
+  ReportInputError,
+} from "./reports.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -449,6 +456,88 @@ async function handle(action: string, body: Record<string, unknown>, admin: Admi
       return data;
     }
 
+    case "reports.list": {
+      const query = parseReportListQuery(body);
+      let request = hmx
+        .from("reports")
+        .select(
+          "id,kind,category,status,app_version_code,app_version_name,android_api,client_created_at,received_at,updated_at",
+        );
+      if (query.kind !== null) request = request.eq("kind", query.kind);
+      if (query.status !== null) request = request.eq("status", query.status);
+      if (query.before !== null) request = request.lt("received_at", query.before);
+      const { data, error } = await request
+        .order("received_at", { ascending: false })
+        .order("id", { ascending: false })
+        .limit(query.limit);
+      if (error) throw new ApiError(503, "service_unavailable");
+      return data;
+    }
+
+    case "reports.get": {
+      const id = parseReportId(body);
+      const { data, error } = await hmx
+        .from("reports")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle();
+      if (error) throw new ApiError(503, "service_unavailable");
+      if (!data) throw new ApiError(404, "not_found");
+      return data;
+    }
+
+    case "reports.update": {
+      const update = parseReportUpdate(body);
+      const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      if (update.status !== undefined) patch.status = update.status;
+      if (update.admin_notes !== undefined) patch.admin_notes = update.admin_notes;
+
+      const { data, error } = await hmx
+        .from("reports")
+        .update(patch)
+        .eq("id", update.id)
+        .select("*")
+        .maybeSingle();
+      if (error) throw new ApiError(503, "service_unavailable");
+      if (!data) throw new ApiError(404, "not_found");
+      await audit(admin.userId, "report.update", "report", update.id, {
+        changed_fields: update.changed_fields,
+      });
+      return data;
+    }
+
+    case "reports.delete": {
+      const id = parseReportId(body);
+      const { data, error } = await hmx
+        .from("reports")
+        .delete()
+        .eq("id", id)
+        .select("id");
+      if (error) throw new ApiError(503, "service_unavailable");
+      if (!data || data.length === 0) throw new ApiError(404, "not_found");
+      await audit(admin.userId, "report.delete", "report", id);
+      return { id };
+    }
+
+    case "reports.purge": {
+      const purge = parseReportPurge(body);
+      const { data, error } = await hmx.rpc("purge_expired_reports", {
+        batch_size: purge.batch_size,
+      });
+      if (error) throw new ApiError(503, "service_unavailable");
+      const removed = typeof data === "number" ? data : 0;
+      await audit(admin.userId, "report.purge", "report", null, {
+        older_than_days: purge.older_than_days,
+        batch_size: purge.batch_size,
+        removed,
+      });
+      return {
+        removed,
+        older_than_days: purge.older_than_days,
+        batch_size: purge.batch_size,
+      };
+    }
+
     default:
       throw new ApiError(400, "unknown_action");
   }
@@ -486,6 +575,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json(200, { ok: true, data });
   } catch (error) {
     if (error instanceof ApiError) return json(error.status, { error: error.code });
+    if (error instanceof ReportInputError) return json(400, { error: error.code });
     console.error("admin-api: unhandled error", error instanceof Error ? error.name : "unknown");
     return json(500, { error: "internal_error" });
   }

@@ -19,6 +19,31 @@ fun signingValue(key: String, envKey: String): String? {
     return fromProperties ?: fromEnv
 }
 
+// Remote endpoints are configuration, not secrets. Keep safe empty defaults in git and let a
+// local.properties entry or environment variable supply the deployment values for a real build.
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) {
+        file.inputStream().use { load(it) }
+    }
+}
+
+fun configValue(key: String, envKey: String): String =
+    (localProperties.getProperty(key) ?: System.getenv(envKey) ?: "").trim()
+
+fun buildConfigString(value: String): String =
+    "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+
+val supabaseUrl = configValue("hmxpdf.supabaseUrl", "HMXPDF_SUPABASE_URL")
+val supabasePublishableKey =
+    configValue("hmxpdf.supabasePublishableKey", "HMXPDF_SUPABASE_PUBLISHABLE_KEY")
+val configEndpoint = configValue("hmxpdf.configEndpoint", "HMXPDF_CONFIG_ENDPOINT").ifBlank {
+    if (supabaseUrl.isBlank()) "" else supabaseUrl.trimEnd('/') + "/functions/v1/config"
+}
+val reportEndpoint = configValue("hmxpdf.reportEndpoint", "HMXPDF_REPORT_ENDPOINT").ifBlank {
+    if (supabaseUrl.isBlank()) "" else supabaseUrl.trimEnd('/') + "/functions/v1/report-submit"
+}
+
 val releaseStoreFilePath = signingValue("storeFile", "CLEARPDF_UPLOAD_STORE_FILE")
 val releaseStorePassword = signingValue("storePassword", "CLEARPDF_UPLOAD_STORE_PASSWORD")
 val releaseKeyAlias = signingValue("keyAlias", "CLEARPDF_UPLOAD_KEY_ALIAS")
@@ -70,6 +95,10 @@ android {
         // Keep every locale declared by the app. Filtering this to English
         // removes values-pt-rBR from the packaged APK, so the language picker
         // can appear to work while the app continues to resolve English.
+        buildConfigField("String", "SUPABASE_URL", buildConfigString(supabaseUrl))
+        buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", buildConfigString(supabasePublishableKey))
+        buildConfigField("String", "CONFIG_ENDPOINT", buildConfigString(configEndpoint))
+        buildConfigField("String", "REPORT_ENDPOINT", buildConfigString(reportEndpoint))
     }
 
     signingConfigs {
@@ -105,6 +134,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     testOptions {
         // Plain JVM unit tests (the xlsx model/writer). Android stubs return defaults instead of

@@ -25,12 +25,16 @@ import androidx.compose.ui.platform.LocalContext
 import com.hmx.pdf.ui.screen.CompressPdfScreen
 import com.hmx.pdf.ui.screen.CreatePdfScreen
 import com.hmx.pdf.ui.screen.DecryptPdfScreen
+import com.hmx.pdf.ui.screen.DiagnosticReportScreen
 import com.hmx.pdf.ui.screen.EncryptPdfScreen
 import com.hmx.pdf.ui.screen.ExtractTextScreen
 import com.hmx.pdf.ui.screen.ImagesToPdfScreen
 import com.hmx.pdf.ui.screen.HomeScreen
 import com.hmx.pdf.ui.screen.MergePdfScreen
 import com.hmx.pdf.ui.screen.OnboardingScreen
+import com.hmx.pdf.ui.screen.PendingReportsScreen
+import com.hmx.pdf.ui.screen.PrivacyOnboardingScreen
+import com.hmx.pdf.ui.screen.ProblemReportScreen
 import com.hmx.pdf.ui.screen.WhatsNewScreen
 import com.hmx.pdf.ui.screen.SpreadsheetViewerScreen
 import com.hmx.pdf.ui.screen.ImageEditorScreen
@@ -74,6 +78,12 @@ import com.hmx.pdf.ui.utils.DocumentOpenOrigin
 
 /** Public so `DocsApp` can pick it as the start destination on a first run. */
 const val ROUTE_ONBOARDING = "onboarding"
+/** Public so `DocsApp` can pick it as the start destination once, after the tour. */
+const val ROUTE_PRIVACY_ONBOARDING = "privacy_onboarding"
+/** Public so `DocsApp` can keep recovery/star prompts off privacy and report screens. */
+const val ROUTE_REPORT_DIAGNOSTIC = "report_diagnostic"
+const val ROUTE_REPORT_PROBLEM = "report_problem"
+const val ROUTE_REPORT_PENDING = "report_pending"
 /** Public so `DocsApp` can open on it once after an update. */
 const val ROUTE_WHATS_NEW = "whats_new"
 
@@ -242,7 +252,8 @@ fun DocsNavGraph(
     // Activity, or the flow would relaunch at page one under the user. The restart, if the choice
     // actually changed anything, is deferred to [onOnboardingFinished].
     onOnboardingLocaleSelected: (String) -> Unit = {},
-    onOnboardingFinished: () -> Unit = {}
+    onOnboardingFinished: () -> Unit = {},
+    onPrivacyOnboardingFinished: () -> Unit = {}
 ) {
     // A document window can start directly on a viewer, so there may be no Home entry to pop to.
     val closeDocument: () -> Unit = {
@@ -345,6 +356,7 @@ fun DocsNavGraph(
         // ── First run ──
 
         composable(ROUTE_ONBOARDING) {
+            val onboardingContext = LocalContext.current
             OnboardingScreen(
                 backdrop = backdrop,
                 selectedLocale = selectedLocale,
@@ -362,17 +374,50 @@ fun DocsNavGraph(
                     // its fade + recreate. Either way we leave this route.
                     onOnboardingFinished()
                     // Two arrivals to unwind. On a first run onboarding IS the start destination and
-                    // there is nothing behind it, so we navigate to Home and drop this route. On a
-                    // replay from Settings the stack is [home, settings, onboarding] — navigating
-                    // would push a second Home and strand Settings under it, so pop instead and land
-                    // back on the Settings row the replay was launched from.
+                    // there is nothing behind it, so we continue to the privacy flow (or Home/What's
+                    // New when that decision already exists) and drop this route. On a replay from
+                    // Settings the stack is [home, settings, onboarding] — navigating would push a
+                    // second Home and strand Settings under it, so pop instead and land back on the
+                    // Settings row the replay was launched from. A replay never re-enters privacy.
                     if (navController.previousBackStackEntry != null) {
                         navController.popBackStack()
                     } else {
-                        navController.navigate(ROUTE_HOME) {
+                        val next = when {
+                            !com.hmx.pdf.data.repository.OnboardingManager
+                                .hasCompletedPrivacyOnboarding(onboardingContext) ->
+                                ROUTE_PRIVACY_ONBOARDING
+                            com.hmx.pdf.data.repository.OnboardingManager
+                                .shouldShowWhatsNew(onboardingContext) -> ROUTE_WHATS_NEW
+                            else -> ROUTE_HOME
+                        }
+                        navController.navigate(next) {
                             popUpTo(ROUTE_ONBOARDING) { inclusive = true }
                             launchSingleTop = true
                         }
+                    }
+                }
+            )
+        }
+
+        // ── First-run privacy & support choices, immediately after the tour ──
+
+        composable(ROUTE_PRIVACY_ONBOARDING) {
+            val privacyContext = LocalContext.current
+            PrivacyOnboardingScreen(
+                backdrop = backdrop,
+                onComplete = { _, _ ->
+                    onPrivacyOnboardingFinished()
+                    val next = if (
+                        com.hmx.pdf.data.repository.OnboardingManager
+                            .shouldShowWhatsNew(privacyContext)
+                    ) {
+                        ROUTE_WHATS_NEW
+                    } else {
+                        ROUTE_HOME
+                    }
+                    navController.navigate(next) {
+                        popUpTo(ROUTE_PRIVACY_ONBOARDING) { inclusive = true }
+                        launchSingleTop = true
                     }
                 }
             )
@@ -470,7 +515,16 @@ fun DocsNavGraph(
                 hasCustomWallpaper = hasCustomWallpaper,
                 onCustomWallpaperChanged = onCustomWallpaperChanged,
                 selectedLocale = selectedLocale,
-                onLocaleChanged = onLocaleChanged
+                onLocaleChanged = onLocaleChanged,
+                onOpenDiagnosticReport = {
+                    navController.navigate(ROUTE_REPORT_DIAGNOSTIC) { launchSingleTop = true }
+                },
+                onOpenProblemReport = {
+                    navController.navigate(ROUTE_REPORT_PROBLEM) { launchSingleTop = true }
+                },
+                onOpenPendingReports = {
+                    navController.navigate(ROUTE_REPORT_PENDING) { launchSingleTop = true }
+                }
             )
         }
 
@@ -825,6 +879,29 @@ fun DocsNavGraph(
                 viewModel = vm,
                 onBack = { navController.popBackStack() },
                 onFillOnPage = { uri -> navController.navigateToPdfViewer(uri) }
+            )
+        }
+
+        // ── User-initiated reports (no background uploader) ──
+
+        composable(ROUTE_REPORT_DIAGNOSTIC) {
+            DiagnosticReportScreen(
+                backdrop = backdrop,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(ROUTE_REPORT_PROBLEM) {
+            ProblemReportScreen(
+                backdrop = backdrop,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(ROUTE_REPORT_PENDING) {
+            PendingReportsScreen(
+                backdrop = backdrop,
+                onBack = { navController.popBackStack() }
             )
         }
     }

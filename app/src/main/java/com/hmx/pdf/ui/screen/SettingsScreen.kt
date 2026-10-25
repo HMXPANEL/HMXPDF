@@ -36,6 +36,7 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Compress
 import androidx.compose.material.icons.rounded.DarkMode
@@ -48,9 +49,11 @@ import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Send
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material.icons.rounded.Tune
@@ -94,6 +97,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hmx.pdf.R
+import com.hmx.pdf.data.privacy.ConsentState
+import com.hmx.pdf.data.privacy.PrivacyStorage
+import com.hmx.pdf.data.report.ReportQueueFactory
 import com.hmx.pdf.data.repository.AppSettingsManager
 import com.hmx.pdf.data.repository.SaveLocationManager
 import com.hmx.pdf.office.OfficeEngine
@@ -123,6 +129,7 @@ import com.kyant.backdrop.backdrops.LayerBackdrop
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Settings, rebuilt on the same kit the tool screens and Home use: [liquidGlassPanel] sections
@@ -148,7 +155,10 @@ fun SettingsScreen(
     onCustomWallpaperChanged: (String?) -> Unit = {},
     selectedLocale: String = "en",
     onLocaleChanged: (String) -> Unit = {},
-    onReplayOnboarding: () -> Unit = {}
+    onReplayOnboarding: () -> Unit = {},
+    onOpenDiagnosticReport: () -> Unit = {},
+    onOpenProblemReport: () -> Unit = {},
+    onOpenPendingReports: () -> Unit = {}
 ) {
     val isLight = !isDarkMode
     val ink = LiquidGlassColors.text(isDarkMode)
@@ -171,6 +181,11 @@ fun SettingsScreen(
     var saveUri by remember { mutableStateOf(SaveLocationManager.getSaveUri(context)) }
     // Non-null while the "Delete Office engine?" dialog is up; holds the size it will free.
     var officeEngineDeleteSize by remember { mutableStateOf<Long?>(null) }
+
+    // Read only when the informational privacy page opens. No network and no consent writes happen
+    // here; the first-run flow is the only place that records a choice in this version.
+    var privacyConsent by remember { mutableStateOf(ConsentState.OFF) }
+    var pendingReportCount by remember { mutableStateOf(0) }
 
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
         if (uri != null) {
@@ -223,6 +238,18 @@ fun SettingsScreen(
             page = PageOffice
         }
     }
+    LaunchedEffect(page) {
+        if (page == PagePrivacy) {
+            val loaded = withContext(Dispatchers.IO) {
+                runCatching { PrivacyStorage.consentStore(context).read() }.getOrDefault(ConsentState.OFF)
+            }
+            privacyConsent = loaded
+            pendingReportCount = withContext(Dispatchers.IO) {
+                runCatching { ReportQueueFactory.create(context).list().count { !it.isTerminal } }
+                    .getOrDefault(0)
+            }
+        }
+    }
     BackHandler(enabled = page != PageIndex) { page = PageIndex }
     val pageTitle = when (page) {
         PageAppearance -> stringResource(R.string.settings_appearance)
@@ -233,6 +260,7 @@ fun SettingsScreen(
         PageLicenses -> stringResource(R.string.settings_licenses)
         PageOffice -> stringResource(R.string.office_engine_title)
         PageGlass -> stringResource(R.string.settings_glass)
+        PagePrivacy -> stringResource(R.string.settings_privacy_security)
         else -> stringResource(R.string.settings_title)
     }
     Box(Modifier.fillMaxSize()) {
@@ -299,6 +327,8 @@ fun SettingsScreen(
                         SettingsNavRow(Icons.Rounded.FolderOpen, LiquidGlassColors.Teal, stringResource(R.string.settings_file_handling), null, ink, sub) { page = PageFiles }
                         SettingsDivider(isLight)
                         SettingsNavRow(Icons.Rounded.Description, LiquidGlassColors.Green, stringResource(R.string.office_engine_title), null, ink, sub) { page = PageOffice }
+                        SettingsDivider(isLight)
+                        SettingsNavRow(Icons.Rounded.Lock, LiquidGlassColors.Blue, stringResource(R.string.settings_privacy_security), null, ink, sub) { page = PagePrivacy }
                     }
                     SettingsSection(backdrop, uiSensor, entrance.sectionFade(3), padding = 8.dp, gap = 0.dp) {
                         SettingsNavRow(Icons.Rounded.Info, LiquidGlassColors.Blue, stringResource(R.string.settings_about), versionLabel, ink, sub) { page = PageAbout }
@@ -619,6 +649,19 @@ fun SettingsScreen(
                         .liquidGlassPanel(backdrop, uiSensor, withShadow = false)
                         .padding(20.dp)
                 )
+
+                // ── Privacy & Security (informational; consent is first-run only) ──
+                if (p == PagePrivacy) PrivacySecuritySettingsPage(
+                    consent = privacyConsent,
+                    pendingReportCount = pendingReportCount,
+                    onOpenDiagnosticReport = onOpenDiagnosticReport,
+                    onOpenProblemReport = onOpenProblemReport,
+                    onOpenPendingReports = onOpenPendingReports,
+                    backdrop = backdrop,
+                    uiSensor = uiSensor,
+                    ink = ink,
+                    sub = sub
+                )
             }
           }
         }
@@ -666,6 +709,7 @@ private const val PageAbout = 5
 private const val PageLicenses = 6
 private const val PageOffice = 7
 private const val PageGlass = 8
+private const val PagePrivacy = 9
 
 /**
  * Settings -> Liquid Glass: kyant's Glass Playground knobs, app-wide. A live preview chip sits over a
@@ -859,6 +903,166 @@ private fun MotionTuningSection(
             accent = LiquidGlassColors.Purple,
             icon = Icons.Rounded.Refresh,
             modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+/**
+ * Settings -> Privacy & Security. Informational only: this version records consent exclusively in
+ * the first-run flow, so there are deliberately no toggles here. Report actions stay disabled when
+ * the saved choice for that report type is OFF.
+ */
+@Composable
+private fun PrivacySecuritySettingsPage(
+    consent: ConsentState,
+    pendingReportCount: Int,
+    onOpenDiagnosticReport: () -> Unit,
+    onOpenProblemReport: () -> Unit,
+    onOpenPendingReports: () -> Unit,
+    backdrop: LayerBackdrop,
+    uiSensor: com.hmx.pdf.ui.utils.UISensor,
+    ink: Color,
+    sub: Color
+) {
+    val context = LocalContext.current
+    val isLight = !com.hmx.pdf.ui.theme.LocalIsDarkMode.current
+    val onLabel = stringResource(R.string.privacy_settings_consent_on)
+    val offLabel = stringResource(R.string.privacy_settings_consent_off)
+
+    SettingsSection(backdrop, uiSensor, Modifier, padding = 24.dp) {
+        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            AccentIconTile(Icons.Rounded.Lock, LiquidGlassColors.Blue, size = 48, iconSize = 24)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                BasicText(
+                    stringResource(R.string.privacy_settings_intro_title),
+                    style = TextStyle(ink, 18.sp, FontWeight.Bold)
+                )
+                BasicText(
+                    stringResource(R.string.privacy_settings_intro_body),
+                    style = TextStyle(sub, 13.sp, lineHeight = 19.sp)
+                )
+            }
+        }
+    }
+
+    SettingsSection(backdrop, uiSensor, Modifier) {
+        SettingsSectionHeader(Icons.Rounded.Lock, stringResource(R.string.privacy_settings_choices), ink)
+        PrivacyStatusRow(
+            label = stringResource(R.string.privacy_settings_diagnostic_status),
+            status = if (consent.diagnosticReportsEnabled) onLabel else offLabel,
+            enabled = consent.diagnosticReportsEnabled,
+            ink = ink,
+            sub = sub
+        )
+        SettingsDivider(isLight)
+        PrivacyStatusRow(
+            label = stringResource(R.string.privacy_settings_problem_status),
+            status = if (consent.problemReportsEnabled) onLabel else offLabel,
+            enabled = consent.problemReportsEnabled,
+            ink = ink,
+            sub = sub
+        )
+        BasicText(
+            stringResource(R.string.privacy_settings_choice_fixed),
+            style = TextStyle(sub, 11.sp, lineHeight = 16.sp)
+        )
+    }
+
+    SettingsSection(backdrop, uiSensor, Modifier) {
+        SettingsSectionHeader(Icons.Rounded.Send, stringResource(R.string.privacy_settings_report_actions), ink)
+        ToolPrimaryButton(
+            text = stringResource(R.string.privacy_settings_diagnostic_action),
+            onClick = onOpenDiagnosticReport,
+            backdrop = backdrop,
+            accent = LiquidGlassColors.Blue,
+            icon = Icons.Rounded.Description,
+            enabled = consent.diagnosticReportsEnabled,
+            modifier = Modifier.fillMaxWidth()
+        )
+        ToolPrimaryButton(
+            text = stringResource(R.string.privacy_settings_problem_action),
+            onClick = onOpenProblemReport,
+            backdrop = backdrop,
+            accent = LiquidGlassColors.Orange,
+            icon = Icons.Rounded.BugReport,
+            enabled = consent.problemReportsEnabled,
+            modifier = Modifier.fillMaxWidth()
+        )
+        ToolPrimaryButton(
+            text = stringResource(R.string.privacy_settings_pending) +
+                if (pendingReportCount > 0) " ($pendingReportCount)" else "",
+            onClick = onOpenPendingReports,
+            backdrop = backdrop,
+            accent = LiquidGlassColors.Indigo,
+            icon = Icons.Rounded.Refresh,
+            modifier = Modifier.fillMaxWidth()
+        )
+        BasicText(
+            stringResource(R.string.privacy_settings_availability),
+            style = TextStyle(sub, 11.sp, lineHeight = 16.sp)
+        )
+    }
+
+    SettingsSection(backdrop, uiSensor, Modifier) {
+        SettingsSectionHeader(Icons.Rounded.Info, stringResource(R.string.privacy_settings_reports_title), ink)
+        BasicText(
+            stringResource(R.string.privacy_settings_reports_body),
+            style = TextStyle(sub, 13.sp, lineHeight = 19.sp)
+        )
+        SettingsDivider(isLight)
+        BasicText(
+            stringResource(R.string.privacy_settings_never_title),
+            style = TextStyle(ink, 15.sp, FontWeight.SemiBold)
+        )
+        BasicText(
+            stringResource(R.string.privacy_settings_never_body),
+            style = TextStyle(sub, 12.sp, lineHeight = 18.sp)
+        )
+        SettingsDivider(isLight)
+        BasicText(
+            stringResource(R.string.privacy_settings_retention_title),
+            style = TextStyle(ink, 15.sp, FontWeight.SemiBold)
+        )
+        BasicText(
+            stringResource(R.string.privacy_settings_retention_body),
+            style = TextStyle(sub, 12.sp, lineHeight = 18.sp)
+        )
+        SettingsDivider(isLight)
+        ToolPrimaryButton(
+            text = stringResource(R.string.privacy_settings_policy),
+            onClick = {
+                openExternalLink(context, "https://github.com/HMXPANEL/HMXPDF/blob/main/PRIVACY.md")
+            },
+            backdrop = backdrop,
+            accent = LiquidGlassColors.Blue,
+            icon = Icons.Rounded.Language,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+@Composable
+private fun PrivacyStatusRow(
+    label: String,
+    status: String,
+    enabled: Boolean,
+    ink: Color,
+    sub: Color
+) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        BasicText(label, Modifier.weight(1f), style = TextStyle(ink, 15.sp, FontWeight.Medium))
+        BasicText(
+            status,
+            style = TextStyle(
+                if (enabled) LiquidGlassColors.success(com.hmx.pdf.ui.theme.LocalIsDarkMode.current)
+                else sub,
+                13.sp,
+                FontWeight.SemiBold
+            )
         )
     }
 }

@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and lower. Cache and noBackupFilesDir are never backed up, so they need no
+     exclusions here. Privacy, flag-cache, and report-queue data live in those locations or in
+     the excluded SharedPreferences files below. -->
 <full-backup-content>
-    <!-- Exclude decrypted PDF plaintext cache from backup (privacy) -->
-    <exclude domain="file" path="cache/decrypted_pdfs/" />
-    <!-- Exclude shared export temp files from backup -->
-    <exclude domain="file" path="cache/shared/" />
+    <!-- Consent, install UUID, and remote-flag cache must not leave the device. -->
+    <exclude domain="sharedpref" path="clearpdf_privacy.xml" />
+    <exclude domain="sharedpref" path="clearpdf_flags.xml" />
     <!-- Exclude save-copy recovery backups (plaintext content) -->
     <exclude domain="file" path="save_copy_recovery/" />
     <!-- Exclude Office save recovery journals (may contain plaintext) -->

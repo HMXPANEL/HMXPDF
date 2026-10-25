@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+ cloud backup and device-to-device transfer. Keep the same privacy boundary as
+     backup_rules.xml: consent, install UUID, and the remote-flag cache never leave the device.
+     Report envelopes are stored in noBackupFilesDir and are inherently excluded. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="clearpdf_privacy.xml" />
+        <exclude domain="sharedpref" path="clearpdf_flags.xml" />
+        <exclude domain="file" path="save_copy_recovery/" />
+        <exclude domain="file" path="save_recovery/" />
+        <exclude domain="file" path="converted_pdfs/" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="clearpdf_privacy.xml" />
+        <exclude domain="sharedpref" path="clearpdf_flags.xml" />
+        <exclude domain="file" path="save_copy_recovery/" />
+        <exclude domain="file" path="save_recovery/" />
+        <exclude domain="file" path="converted_pdfs/" />
+    </device-transfer>
+</data-extraction-rules>

@@ -9,6 +9,9 @@ import android.content.SharedPreferences
 object OnboardingManager {
     private const val PREFS_NAME = "clearpdf_onboarding"
     private const val KEY_COMPLETED = "onboarding_completed"
+    // The privacy/support flow runs once, after the feature tour. Kept separate from
+    // KEY_COMPLETED so replaying the tour from Settings never re-enters it.
+    private const val KEY_PRIVACY_COMPLETED = "privacy_onboarding_completed"
     private const val KEY_LOCALE = "selected_locale"
     // The app versionCode the user last finished onboarding on. When a newer build is
     // installed this is behind [currentVersionCode], so the tour is shown again to surface
@@ -56,6 +59,17 @@ object OnboardingManager {
             // Someone who just took the full tour is already up to date.
             .putInt(KEY_WHATS_NEW_VERSION, currentVersionCode(context))
             .apply()
+
+    /**
+     * The privacy/support flow is shown once to every install that has no recorded privacy
+     * decision. Existing installs therefore see it after the next update; it is never shown again
+     * after either "Next" or "Not now".
+     */
+    fun hasCompletedPrivacyOnboarding(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_PRIVACY_COMPLETED, false)
+
+    fun setPrivacyOnboardingComplete(context: Context) =
+        prefs(context).edit().putBoolean(KEY_PRIVACY_COMPLETED, true).apply()
 
     /**
      * True once after an update: the user finished onboarding on an older build (or before

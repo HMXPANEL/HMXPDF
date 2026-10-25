@@ -68,6 +68,10 @@ import com.hmx.pdf.ui.components.LiquidButton
 import com.hmx.pdf.ui.components.liquidGlassPanel
 import com.hmx.pdf.ui.navigation.DocsNavGraph
 import com.hmx.pdf.ui.navigation.ROUTE_ONBOARDING
+import com.hmx.pdf.ui.navigation.ROUTE_PRIVACY_ONBOARDING
+import com.hmx.pdf.ui.navigation.ROUTE_REPORT_DIAGNOSTIC
+import com.hmx.pdf.ui.navigation.ROUTE_REPORT_PENDING
+import com.hmx.pdf.ui.navigation.ROUTE_REPORT_PROBLEM
 import com.hmx.pdf.ui.theme.LocalIsDarkMode
 import com.hmx.pdf.ui.theme.LocalReducedGlassMotion
 import com.hmx.pdf.ui.utils.StarPromptEventBus
@@ -116,6 +120,12 @@ fun DocsApp(
         // Shows on first launch and again after each app update (version-aware).
         OnboardingManager.shouldShowOnboarding(context) &&
             shortcutRoute == null && incomingPdfUri == null
+    }
+    // Existing installs have no privacy decision yet. The privacy flow runs once, after the tour on
+    // a first run, or as the start destination on the first ordinary launch after the update.
+    val needsPrivacyOnboarding = remember {
+        !needsOnboarding && shortcutRoute == null && incomingPdfUri == null &&
+            !OnboardingManager.hasCompletedPrivacyOnboarding(context)
     }
     // The locale the Activity actually booted with. Onboarding changes `selectedLocale` in place for
     // the flow's own strings, but the rest of the app was built by `attachBaseContext` against this
@@ -203,6 +213,22 @@ fun DocsApp(
         StarPromptEventBus.promptRequests.collect { starMoment++ }
     }
 
+    // One non-blocking config refresh per ordinary launch, only after the user has completed the
+    // privacy flow. Opening onboarding or Settings performs no network request.
+    LaunchedEffect(Unit) {
+        if (!documentWindow && !needsOnboarding && !needsPrivacyOnboarding &&
+            OnboardingManager.hasCompletedPrivacyOnboarding(context)
+        ) {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    com.hmx.pdf.data.remote.RemoteConfig
+                        .create(context, com.hmx.pdf.BuildConfig.VERSION_CODE)
+                        .refresh()
+                }
+            }
+        }
+    }
+
     val openRepo = remember(context) {
         {
             runCatching {
@@ -288,9 +314,13 @@ fun DocsApp(
         // once per launch so tapping "Later" is not undone by a tab change.
         LaunchedEffect(needsOnboarding, documentWindow, currentRoute) {
             if (recoveryChecked) return@LaunchedEffect
-            if (!needsOnboarding && !documentWindow && currentRoute != null &&
+            if (!needsOnboarding && !needsPrivacyOnboarding && !documentWindow && currentRoute != null &&
                 currentRoute != com.hmx.pdf.ui.navigation.ROUTE_WHATS_NEW &&
-                currentRoute != com.hmx.pdf.ui.navigation.ROUTE_ONBOARDING
+                currentRoute != com.hmx.pdf.ui.navigation.ROUTE_ONBOARDING &&
+                currentRoute != ROUTE_PRIVACY_ONBOARDING &&
+                currentRoute != ROUTE_REPORT_DIAGNOSTIC &&
+                currentRoute != ROUTE_REPORT_PROBLEM &&
+                currentRoute != ROUTE_REPORT_PENDING
             ) {
                 recoveryEntry = runCatching {
                     withContext(Dispatchers.IO) { SaveRecovery.pending(context) }
@@ -344,7 +374,7 @@ fun DocsApp(
         // recent failure, backing off). Never mid-task, never in a document opened from another
         // app, never on a launch that showed the tour or What's New. Leaving the tab cancels it.
         LaunchedEffect(currentRoute, starMoment, recoveryEntry) {
-            if (showWhatsNew || needsOnboarding || documentWindow || recoveryEntry != null) {
+            if (showWhatsNew || needsOnboarding || needsPrivacyOnboarding || documentWindow || recoveryEntry != null) {
                 return@LaunchedEffect
             }
             if (currentRoute != "home" && currentRoute != "tools") return@LaunchedEffect
@@ -486,6 +516,7 @@ fun DocsApp(
                         // tour/What's New in a document window. Those belong to the launcher flow.
                         documentStartRoute != null -> documentStartRoute
                         needsOnboarding -> ROUTE_ONBOARDING
+                        needsPrivacyOnboarding -> ROUTE_PRIVACY_ONBOARDING
                         showWhatsNew -> com.hmx.pdf.ui.navigation.ROUTE_WHATS_NEW
                         else -> "home"
                     },
@@ -517,6 +548,17 @@ fun DocsApp(
                             )
                             com.hmx.pdf.ui.utils.LocaleHelper.markLocaleFadePending(context)
                             localeSwitching = true
+                        }
+                    },
+                    onPrivacyOnboardingFinished = {
+                        recoveryScope.launch {
+                            withContext(Dispatchers.IO) {
+                                runCatching {
+                                    com.hmx.pdf.data.remote.RemoteConfig
+                                        .create(context, com.hmx.pdf.BuildConfig.VERSION_CODE)
+                                        .refresh()
+                                }
+                            }
                         }
                     }
                 )
@@ -656,7 +698,11 @@ fun DocsApp(
                 GlassDialog(
                     visible = pendingRecovery != null &&
                         currentRoute != com.hmx.pdf.ui.navigation.ROUTE_WHATS_NEW &&
-                        currentRoute != com.hmx.pdf.ui.navigation.ROUTE_ONBOARDING,
+                        currentRoute != com.hmx.pdf.ui.navigation.ROUTE_ONBOARDING &&
+                        currentRoute != ROUTE_PRIVACY_ONBOARDING &&
+                        currentRoute != ROUTE_REPORT_DIAGNOSTIC &&
+                        currentRoute != ROUTE_REPORT_PROBLEM &&
+                        currentRoute != ROUTE_REPORT_PENDING,
                     onDismiss = { recoveryEntry = null },
                     backdrop = contentBackdrop,
                     title = stringResource(R.string.save_recovery_title),

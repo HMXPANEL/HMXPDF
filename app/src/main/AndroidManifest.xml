@@ -4,12 +4,10 @@
 
     <!-- Camera permission for document scanning -->
     <uses-permission android:name="android.permission.CAMERA" />
-    <!-- The main manifest does not declare INTERNET. Bundled libraries may contribute it when
-         manifests are merged. The Play build gets the optional Office engine through Play Feature
-         Delivery. The FOSS flavor declares INTERNET for the on-request engine download and the
-         user-entered URL-to-PDF flow - see src/foss/AndroidManifest.xml.
+    <!-- Remote config and explicit, user-submitted reports use HTTPS only. The FOSS/F-Droid
+         flavors also use this permission for the on-request Office engine download and the
+         user-entered URL-to-PDF flow. -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" /> -->
     <!-- Legacy read access for older providers on Android 12L and below. -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <!-- Legacy write access for pre-scoped-storage devices only. -->
@@ -35,7 +33,7 @@
 
     <application
         android:allowBackup="true"
-        android:dataExtractionRules="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:enableOnBackInvokedCallback="true"
         android:hardwareAccelerated="true"
@@ -45,6 +43,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.HMXPDF"
         android:localeConfig="@xml/locales_config"
+        android:usesCleartextTraffic="false"
         tools:targetApi="33">
         <!-- WorkManager's SystemForegroundService needs dataSync foreground service type for foreground workers -->
         <service

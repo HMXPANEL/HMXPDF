@@ -12,7 +12,7 @@ private val QueueJson = Json {
     ignoreUnknownKeys = true
 }
 
-class ReportQueueException(message: String, cause: Throwable? = null) :
+open class ReportQueueException(message: String, cause: Throwable? = null) :
     IllegalStateException(message, cause)
 
 class ReportQueueFullException :

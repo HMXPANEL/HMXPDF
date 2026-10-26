@@ -57,11 +57,14 @@ test("admin-api exposes report actions with audit writes for mutations", async (
   const ts = await source("functions/admin-api/index.ts");
 
   for (const action of [
+    "session.whoami",
+    "reports.stats",
     "reports.list",
     "reports.get",
     "reports.update",
     "reports.delete",
     "reports.purge",
+    "audit.list",
   ]) {
     assert.match(ts, new RegExp(`case "${action.replace(".", "\\.")}"`));
   }
@@ -72,6 +75,9 @@ test("admin-api exposes report actions with audit writes for mutations", async (
   assert.match(ts, /purge_expired_reports/);
   assert.match(ts, /isAuthorizedAdmin\(admin\)/);
   assert.match(ts, /origin !== null && origin !== ADMIN_ORIGIN/);
+  assert.match(ts, /parseAuditListQuery\(body\)/);
+  assert.match(ts, /countReports\(\{ status: "received" \}\)/);
+  assert.doesNotMatch(ts, /\.select\("\*"\)/);
 });
 
 test("config rejects install_id and always evaluates without one", async () => {

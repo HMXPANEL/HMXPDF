@@ -1,4 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { AuditInputError, parseAuditListQuery } from "./audit.ts";
 import { isAuthorizedAdmin } from "./authz.ts";
 import {
   parseReportId,
@@ -17,6 +18,8 @@ const KEY_PATTERN = /^[a-z][a-z0-9_.-]{2,63}$/;
 const SEGMENT_PATTERN = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const REPORT_DETAIL_COLUMNS =
+  "id,kind,category,description,attached_error,app_version_code,app_version_name,build_flavor,build_type,android_api,locale,self_checks,status,admin_notes,client_created_at,received_at,updated_at";
 
 const db = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
@@ -205,8 +208,24 @@ async function authenticate(req: Request): Promise<Admin> {
   return { userId: userData.user.id, role: admin.role };
 }
 
+async function countReports(filter: { kind?: string; status?: string } = {}): Promise<number> {
+  let request = hmx.from("reports").select("id", { count: "exact", head: true });
+  if (filter.kind !== undefined) request = request.eq("kind", filter.kind);
+  if (filter.status !== undefined) request = request.eq("status", filter.status);
+  const { count, error } = await request;
+  if (error) {
+    console.error("admin-api: report count failed", error.code);
+    throw new ApiError(503, "service_unavailable");
+  }
+  return count ?? 0;
+}
+
 async function handle(action: string, body: Record<string, unknown>, admin: Admin): Promise<unknown> {
   switch (action) {
+    case "session.whoami": {
+      return { user_id: admin.userId, role: admin.role };
+    }
+
     case "flags.list": {
       const { data, error } = await hmx
         .from("feature_flags")
@@ -447,13 +466,35 @@ async function handle(action: string, body: Record<string, unknown>, admin: Admi
     }
 
     case "audit.list": {
-      const { data, error } = await hmx
+      const query = parseAuditListQuery(body);
+      let request = hmx
         .from("admin_audit_log")
-        .select("id,admin_user_id,action,target_type,target_id,metadata,created_at")
+        .select("id,admin_user_id,action,target_type,target_id,metadata,created_at");
+      if (query.action !== null) request = request.eq("action", query.action);
+      if (query.before !== null) request = request.lt("created_at", query.before);
+      const { data, error } = await request
         .order("created_at", { ascending: false })
-        .limit(100);
+        .order("id", { ascending: false })
+        .limit(query.limit);
       if (error) throw new ApiError(503, "service_unavailable");
       return data;
+    }
+
+    case "reports.stats": {
+      const [total, received, reviewing, resolved, diagnostic, problem] = await Promise.all([
+        countReports(),
+        countReports({ status: "received" }),
+        countReports({ status: "reviewing" }),
+        countReports({ status: "resolved" }),
+        countReports({ kind: "diagnostic_test" }),
+        countReports({ kind: "problem" }),
+      ]);
+      return {
+        total,
+        pending: received + reviewing,
+        by_kind: { diagnostic_test: diagnostic, problem },
+        by_status: { received, reviewing, resolved },
+      };
     }
 
     case "reports.list": {
@@ -478,7 +519,7 @@ async function handle(action: string, body: Record<string, unknown>, admin: Admi
       const id = parseReportId(body);
       const { data, error } = await hmx
         .from("reports")
-        .select("*")
+        .select(REPORT_DETAIL_COLUMNS)
         .eq("id", id)
         .maybeSingle();
       if (error) throw new ApiError(503, "service_unavailable");
@@ -496,7 +537,7 @@ async function handle(action: string, body: Record<string, unknown>, admin: Admi
         .from("reports")
         .update(patch)
         .eq("id", update.id)
-        .select("*")
+        .select(REPORT_DETAIL_COLUMNS)
         .maybeSingle();
       if (error) throw new ApiError(503, "service_unavailable");
       if (!data) throw new ApiError(404, "not_found");
@@ -576,6 +617,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   } catch (error) {
     if (error instanceof ApiError) return json(error.status, { error: error.code });
     if (error instanceof ReportInputError) return json(400, { error: error.code });
+    if (error instanceof AuditInputError) return json(400, { error: error.code });
     console.error("admin-api: unhandled error", error instanceof Error ? error.name : "unknown");
     return json(500, { error: "internal_error" });
   }

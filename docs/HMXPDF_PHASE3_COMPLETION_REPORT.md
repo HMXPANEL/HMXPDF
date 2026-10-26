@@ -3,10 +3,10 @@
 - **Report date:** 2026-10-26
 - **Repository:** `HMXPANEL/HMXPDF`
 - **Branch:** `feature/hmxpdf-diagnostics-admin-updates`
-- **Code HEAD validated:** `2a92d6fd116207a0f3212be6e383f55d4fa9f150` (source); this report's commit is the latest commit on the feature branch
+- **Code HEAD validated:** `2d1b2f8` (Phase 3 source) plus this report's commit (private admin panel); this report's commit is the latest commit on the feature branch
 - **`main` / `origin/main`:** `912e9977916c4f365147a294e60c3cd95d96960e` (unchanged)
 - **Distribution:** private APK; no Google Play listing or Data Safety work
-- **Status:** Phase 3 source is complete on the feature branch. Android CI is green on `cc8129d`, and the Android source is unchanged, so the verified debug/release artifacts remain valid. Backend source passes Node and Deno checks. The isolated staging project was revalidated live, including `report-submit` v2 after a Supabase JS API fix, `config` validation, both SQL suites, and the active retention scheduler. `PRIVACY.md` was rewritten for private distribution. Admin live authorization remains **BLOCKED** on `ADMIN_ORIGIN`; reviewed translations and device QA are **BLOCKED**; production was not deployed.
+- **Status:** Phase 3 source and the private admin panel are complete on the feature branch. Android CI is green on `cc8129d`, and the Android source is unchanged, so the verified debug/release artifacts remain valid. Backend source passes 72 Node tests plus Deno and strict TypeScript checks. The admin frontend passes typecheck, lint, 30 tests, a production build, and a secret scan. Staging `admin-api` v2 is deployed with `session.whoami`, `reports.stats`, and bounded/filterable `audit.list`. The isolated staging project was revalidated live, including `report-submit` v2, `config` validation, both SQL suites, and the active retention scheduler. `PRIVACY.md` was rewritten for private distribution. Admin live authorization and the Vercel Preview remain **BLOCKED** on valid Vercel access, an actual Preview origin, `ADMIN_ORIGIN`, and an approved staging admin identity; reviewed translations and device QA are **BLOCKED**; production was not deployed.
 
 ---
 
@@ -21,17 +21,24 @@
 | Signed release APK (CI) | **PASS** | `hmx-pdf-release-apk`, 5 APKs, existing release signer |
 | Signed release bundle (CI) | **PASS** | `hmx-pdf-release-bundle`, `jarsigner` verified |
 | Local Android Gradle re-run | **BLOCKED** | No Android SDK; release signing environment also absent. Exact errors in §5.1 |
-| Backend source | **PASS** | Commit `24b2a90` plus the `report-submit` fix in this report's commit |
-| Backend Node tests | **PASS** | `node --test supabase/tests/*.test.ts` → 69 passed, 0 failed |
+| Backend source | **PASS** | Commit `24b2a90`, later fixes, and admin API v2 in this report's commit |
+| Backend Node tests | **PASS** | `node --test supabase/tests/*.test.ts` → 72 passed, 0 failed |
 | Backend type checks | **PASS** | `deno check` on all four entrypoints; strict `tsc` on the pure modules |
 | Backend CI | **NOT RUN** | No backend workflow exists; only `.github/workflows/android.yml` |
 | SQL security suite | **PASS** | Rerun on staging; explicit `security_ok` marker after the full suite |
 | SQL retention suite | **PASS** | Rerun on staging; explicit `retention_ok` marker after the full suite |
-| Staging deployment | **PASS** | Migrations, `report-submit` v2, `config` v1, `admin-api` v1, retention scheduler |
+| Staging deployment | **PASS** | Migrations, `report-submit` v2, `config` v1, `admin-api` v2, retention scheduler |
 | `report-submit` live | **PASS** | Valid `201`, duplicate `200`, concurrent race `201` + `200`; rows cleaned |
 | `config` live | **PASS** | Valid `200`; `install_id`, unknown fields, and invalid keys rejected |
 | Automatic retention (staging) | **PASS** | `pg_cron` job active; runids 1–7 succeeded through 04:17 UTC; 30-day purge observed |
-| Admin live integration | **BLOCKED** | `admin-api` fails closed with `503 admin_origin_not_configured`; no admin origin, frontend, or admin user exists |
+| Admin frontend source | **PASS** | `admin/` Vite + React + TypeScript SPA; no service-role key |
+| Admin frontend checks | **PASS** | Typecheck, lint, 30 tests, production build |
+| Admin frontend secret scan | **PASS** | No privileged secret or source map in source/bundle |
+| `admin-api` v2 staging deployment | **PASS** | New actions deployed; fail-closed probes pass |
+| Vercel Preview deployment | **BLOCKED** | No valid Vercel token/session or project access |
+| Vercel private access protection | **BLOCKED** | Requires a Vercel project and account access |
+| `ADMIN_ORIGIN` configuration | **BLOCKED** | No Supabase secret-management access and no deployed origin |
+| Admin live integration | **BLOCKED** | `admin-api` fails closed with `503 admin_origin_not_configured`; staging has 0 auth users and 0 admin allowlist rows |
 | Privacy documentation | **PASS** | `PRIVACY.md` rewritten for private distribution; in-app link merge gate in §7 |
 | Reviewed translations | **BLOCKED** | No reviewed Phase 3 translations; scoped lint exception retained |
 | Accessibility source review | **PASS** | Labels/state descriptions/dialogs/errors audited; two gaps documented in §3.7 |
@@ -55,7 +62,8 @@ The release artifacts are **private CI artifacts only**. No GitHub release, tag,
 | `d394143` | Document Phase 3 completion and open deployment gates |
 | `ff430ec` | Record staging validation and remaining Phase 3 blockers |
 | `2a92d6f` | Clarify staging SQL suite execution |
-| This report's commit | Update private-distribution privacy policy, fix `report-submit` insert/upsert, add the source assertion and device QA checklist, refresh this report |
+| `2d1b2f8` | Document private distribution and fix report upsert |
+| This report's commit | Add the private admin panel, admin API v2 actions, frontend/backend tests, and deployment documentation; refresh this report |
 
 `origin/feature/hmxpdf-diagnostics-admin-updates` matches the local feature branch after the push. `main` and `origin/main` remain at `912e9977916c4f365147a294e60c3cd95d96960e`. No force-push, rebase, merge, branch replacement, or `main` checkout occurred.
 
@@ -170,12 +178,16 @@ A Deno type check found that the real Supabase store called `.insert(record, { o
 
 ### 4.3 Admin API
 
-- `reports.list`, `reports.get`, `reports.update`, `reports.delete`, and `reports.purge` were added.
-- Existing admin authorization, active-allowlist checks, origin checks, and audit logging remain in front of the new actions.
-- List filters and limits are validated; update accepts only `status` and `admin_notes`; purge is fixed at 30 days and a bounded batch.
-- Audit records contain action metadata, not report content.
+- Existing actions cover flags, assignments, settings/kill switch, testers, invites, audit, and report list/get/update/delete/purge.
+- `reports.list`, `reports.get`, `reports.update`, `reports.delete`, and `reports.purge` remain the only report mutations.
+- New `session.whoami` returns the authorized user ID and role, so the frontend can prove the allowlist check instead of treating sign-in as access.
+- New `reports.stats` performs six exact count queries and returns `total`, `pending`, `by_kind`, and `by_status`. Counts are not inferred from a page of rows.
+- `audit.list` now accepts an optional exact `action`, a `before` cursor, and a limit of 1–100; the previous hard-coded 100-row response is gone.
+- `reports.get` and `reports.update` select explicit detail columns and omit `install_id` and `client_report_id`. List rows already omit report content.
+- Existing admin authorization, active-allowlist checks, origin checks, and audit logging remain in front of every action. Audit records contain action metadata, not report content.
+- Request validation is strict: bounded bodies, UUID/status/kind checks, a 1–4,000 character admin note, a fixed 30-day purge age, and a bounded purge batch.
 
-Staging `admin-api` v1 is deployed with platform `verify_jwt = false`; `supabase/config.toml` specifies `true`, and the function performs its own `auth.getUser` plus active-allowlist check. Production `admin-api` v1 is deployed with `verify_jwt = true` but predates the Phase 3 report actions. Live staging POST and OPTIONS requests currently return `503 admin_origin_not_configured`; `GET` returns `405 method_not_allowed`. Function logs show `admin-api: ADMIN_ORIGIN is not configured`. This is the intended fail-closed behavior, but it prevents live admin authorization and report-action tests until `ADMIN_ORIGIN` is configured. No admin user or allowlist row exists in staging.
+Staging `admin-api` v2 is deployed with platform `verify_jwt = false`; `supabase/config.toml` specifies `true`, and the function performs its own `auth.getUser` plus active-allowlist check. Production `admin-api` v1 is deployed with `verify_jwt = true` but predates the Phase 3 report actions and v2 additions. Live staging POST, OPTIONS, and bogus-token probes currently return `503 admin_origin_not_configured`; `GET` returns `405 method_not_allowed`. Function logs show `admin-api: ADMIN_ORIGIN is not configured`. This is the intended fail-closed behavior, but it prevents live origin/auth/report-action tests until `ADMIN_ORIGIN` is configured. No admin user or allowlist row exists in staging.
 
 ### 4.4 Config privacy
 
@@ -196,6 +208,20 @@ Deployed to staging as `config` v1 (`verify_jwt = false`) and exercised with liv
 - Includes verification queries for `cron.job`, `cron.job_run_details`, and expired-row counts.
 
 Applied to staging after installing `pg_cron` 1.6.4 (`cron.database_name = postgres`, `cron.timezone = GMT`). Job `hmx-purge-expired-reports` (jobid 1) is active at `17 * * * *`; runids 1–7 succeeded in `cron.job_run_details` through 2026-10-26 04:17 UTC. It has **not** been applied to production.
+
+### 4.6 Admin panel frontend
+
+- Located at `admin/` on the feature branch. No separate owner-approved admin frontend repository exists, so the existing HMXPDF repository is used; no repository URL was invented.
+- Vite + React + TypeScript single-page app. Routes: `/login`, `/dashboard`, `/reports`, `/reports/:id`, `/flags`, and `/audit`. All non-login routes are protected by `RequireAdmin`.
+- Sign-in uses Supabase Auth email/password. The session is tab-scoped in `sessionStorage`, not `localStorage`. After sign-in the app calls `session.whoami`; only a successful backend response sets the authorized state. A 401 clears the local session, a 403 shows **Not authorized**, and report data is never fetched before authorization succeeds.
+- The API client posts `{action, ...body}` to `admin-api` with the public publishable key and the session Bearer token, uses `cache: no-store`, a 20-second timeout, and stable error codes. It rejects success-shaped responses without `data`.
+- Dashboard: total, pending, by-kind and by-status counts from `reports.stats`; recent activity from `audit.list`; connection status is shown only after a real authorized response.
+- Reports: cursor-paginated list (25/page), kind/status filters, detail view, status/admin-note updates, single delete, and a confirmed 30-day purge. No search or bulk actions are offered because the backend supports neither.
+- Feature controls: only `diagnostics.enabled` and `problem_reports.enabled`, with explicit confirmation, 0% or 100% availability, and a kill switch. Fractional rollout is not offered because Android config requests send no install ID and fail closed.
+- Audit logs: read-only, 50/page, filterable by exact action, with no edit or delete control.
+- `admin/vercel.json` adds an SPA rewrite, a restrictive CSP, `frame-ancestors 'none'`, `X-Frame-Options: DENY`, `nosniff`, `no-referrer`, and `noindex`. `admin/.env.example` contains only public variables. No service-role key, database password, admin secret, or private token is used or committed.
+- `admin/README.md` documents local setup, Vercel Preview deployment, the exact `ADMIN_ORIGIN` manual step, the staging identity requirement, and the security model.
+- No Vercel project, token, or deployment exists in this environment. `vercel whoami` fails with an invalid-token error, so no Preview URL or private access protection was created or claimed.
 
 ---
 
@@ -255,15 +281,30 @@ npx --yes -p typescript@5.9.3 tsc --noEmit --strict --target es2022 \
   --allowImportingTsExtensions --skipLibCheck \
   supabase/functions/config/request.ts supabase/functions/config/rollout.ts \
   supabase/functions/admin-api/authz.ts supabase/functions/admin-api/reports.ts \
+  supabase/functions/admin-api/audit.ts \
   supabase/functions/report-submit/handler.ts
 ```
 
-Result: **69 passed, 0 failed, 0 skipped, 0 todo**; Deno type checking passes for all four entrypoints; strict TypeScript checking passes for the pure modules. The Deno check caught the `insert`/`upsert` misuse described in §4.2; after the fix and the added source assertion, both checks pass.
+Result: **72 passed, 0 failed, 0 skipped, 0 todo**; Deno type checking passes for all four entrypoints; strict TypeScript checking passes for the pure modules. The Deno check caught the `insert`/`upsert` misuse described in §4.2; after the fix and the added source assertion, both checks pass. The new audit tests cover defaults, exact action/cursor filters, and rejected limits.
+
+Frontend checks (run from a `/tmp` copy because the SD-card filesystem cannot execute native rollup/esbuild modules):
+
+```bash
+node node_modules/typescript/bin/tsc -b
+node node_modules/eslint/bin/eslint.js .
+node node_modules/vitest/vitest.mjs run
+VITE_SUPABASE_URL=https://jxeuwqmdxwqqvyhisrhg.supabase.co \
+VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_… \
+VITE_ENVIRONMENT=staging \
+node node_modules/vite/bin/vite.js build
+```
+
+Result: **typecheck PASS**, **lint PASS**, **30 tests PASS** (9 files), **production build PASS** (`431.11 kB` JS / `123.35 kB` gzip, `11.15 kB` CSS). The build contains no source maps.
 
 Additional static checks:
 
 - `git diff --check` clean.
-- Secret scan found no service-role key, private key, token, or password in the changed source.
+- Secret scan of `admin/src`, `admin/dist`, and tracked source found no service-role key, `sb_secret_`, private key, access token, or password. The only Supabase key in the bundle is the public `sb_publishable_…` key.
 - No `device_model`, document content, filename, path, URI, annotation, form value, signature, password, token, raw log, screenshot, location, contact, or hardware identifier field exists in the report schema or Android payload.
 - No production caller of a periodic report uploader or WorkManager report scheduler.
 
@@ -304,7 +345,7 @@ An isolated free-plan project `hmxpdf-staging` (`jxeuwqmdxwqqvyhisrhg`, region `
 |---|---|---|---|
 | `report-submit` | 2 | `false` | ACTIVE; live probes pass, including the concurrent duplicate race |
 | `config` | 1 | `false` | ACTIVE; live probes pass |
-| `admin-api` | 1 | `false` | ACTIVE; fails closed pending `ADMIN_ORIGIN` |
+| `admin-api` | 2 | `false` | ACTIVE; fails closed pending `ADMIN_ORIGIN` |
 
 **SQL suites (transactional, rolled back)**
 
@@ -359,9 +400,10 @@ All live test rows and rate-limit buckets were deleted afterward. Staging is bac
 
 **Admin API**
 
-- Deployment succeeded, but live POST and OPTIONS requests return `503 admin_origin_not_configured`; `GET` returns `405 method_not_allowed`. Function logs show three `admin-api: ADMIN_ORIGIN is not configured` errors at 05:04:29–05:04:30 UTC, matching the three POST probes.
-- The exposed MCP tool set has no secrets-management operation. `npx supabase` is available but has no login or access token. No admin frontend source exists in the repository, and no hosting/deployment credentials or Vercel project are available. There is no actual staging admin origin to configure, and inventing one or using a wildcard is prohibited.
-- No admin JWT, allowlist row, or report action was exercised live. Admin report actions remain covered only by local Node tests.
+- `admin-api` v2 was deployed on 2026-10-26 with `index.ts`, `audit.ts`, `authz.ts`, `reports.ts`, and `_shared/report-schema.ts`; the stored function source contains `session.whoami`, `reports.stats`, and `parseAuditListQuery`, and no `.select("*")`.
+- Live probes after deployment: `GET` → `405 method_not_allowed`; `OPTIONS` → `503`; POST with no origin, `https://evil.example`, a fake Vercel origin, or a bogus Bearer token → `503 admin_origin_not_configured`. No response carried `access-control-allow-origin`. This is the intended fail-closed order while `ADMIN_ORIGIN` is unset.
+- The exposed MCP tool set has no secrets-management operation. `npx supabase` is available but has no login or access token. The admin frontend now exists at `admin/`, but no hosting/deployment credentials or Vercel project are available. There is no actual staging admin origin to configure, and inventing one or using a wildcard is prohibited.
+- No admin JWT, allowlist row, or report action was exercised live. The new origin/auth/report paths remain covered only by local Node and frontend tests.
 
 **Staging cleanup state**
 
@@ -398,6 +440,35 @@ The in-app policy link still points to `https://github.com/HMXPANEL/HMXPDF/blob/
 
 A precise manual checklist for the OPPO A38 (Android 15) was added at `docs/HMXPDF_PHASE3_DEVICE_QA_CHECKLIST.md`. It covers the 20 requested behaviors plus accessibility and signed-upgrade checks, with reset commands, evidence capture, and redaction rules. The conditional remote-flag test is marked blocked until admin/config access exists.
 
+### 5.9 Admin panel validation
+
+| Check | Status | Evidence |
+|---|---|---|
+| TypeScript type check | **PASS** | `tsc -b` clean |
+| ESLint | **PASS** | `eslint .` clean |
+| Unit/route/API tests | **PASS** | 30 tests in 9 files |
+| Route protection | **PASS** | authorized renders protected content; signed-out, unauthorized, unavailable, and config-error redirect to login without report data; loading shows a status state |
+| API client | **PASS** | Bearer/apikey/action envelope, 401 callback, no fetch without a session, network/timeout codes, malformed success rejection, `ADMIN_ORIGIN` messages |
+| Report filters/pagination | **PASS** | empty filters omitted, kind sent, `before` cursor used for Older, full-page cursor only |
+| Feature controls | **PASS** | confirmation dialog, 0%/100% mapping, kill-switch preservation, metadata preservation, server-confirmed success text |
+| Audit rendering | **PASS** | rows render, empty state, no delete/edit control, bounded query |
+| Login states | **PASS** | sign-in form, unauthorized state, config-error state |
+| Production build | **PASS** | Vite build succeeded; no source maps |
+| Secret scan | **PASS** | no service-role/secret/token markers; only the public publishable key appears |
+| Backend Node tests | **PASS** | 72 passed, including new audit validation |
+| Deno type checks | **PASS** | all four entrypoints |
+| Staging `admin-api` v2 deployment | **PASS** | version 2, `verify_jwt = false`, new source verified |
+| Live fail-closed probes | **PASS** | 405/503 matrix above; no CORS allow-origin while unset |
+| Live origin rejection (`403`) | **BLOCKED** | Requires `ADMIN_ORIGIN` to be set first |
+| Live unauthenticated (`401`) | **BLOCKED** | Requires `ADMIN_ORIGIN` to be set first |
+| Live non-admin (`403`) | **BLOCKED** | Requires a staging auth user without an allowlist row |
+| Live authorized admin | **BLOCKED** | Staging has 0 auth users and 0 active admin rows |
+| Live report/flag/audit mutations | **BLOCKED** | Require the authorized admin path |
+| Vercel Preview + exact URL | **BLOCKED** | No valid Vercel token/session or project |
+| Private access protection | **BLOCKED** | No Vercel project/account access |
+
+The frontend checks were run from a copy under `/tmp` because the SD-card mount cannot execute native rollup/esbuild binaries (`failed to map segment from shared object`). The copied tree was the same source; no test was skipped or altered for this. Vercel's normal install and build are not affected by that host limitation.
+
 ---
 
 ## 6. Requirement compliance
@@ -426,7 +497,16 @@ A precise manual checklist for the OPPO A38 (Android 15) was added at `docs/HMXP
 | Config fails closed on unavailable/invalid/stale/disabled flags | **PASS (JVM tests)** | |
 | Retention copy marks automatic deletion as not yet active | **PASS (source)** | Staging scheduler verified; copy remains conservative until production deployment |
 | Backend strict allowlist, idempotency, rate limits, RLS/grants, purge, rate-limit cleanup | **PASS (staging SQL/live)** | Security/retention suites plus live report/config probes pass |
-| Admin authorization, active allowlist, origin checks, audit | **BLOCKED (live)** | Source/Node tests pass; `admin-api` fails closed until `ADMIN_ORIGIN` is set |
+| Admin authorization, active allowlist, origin checks, audit | **BLOCKED (live)** | Source/Node tests pass; `admin-api` v2 fails closed until `ADMIN_ORIGIN` is set and a staging admin exists |
+| Private admin panel source | **PASS** | `admin/` on the feature branch; no service-role key |
+| Admin frontend checks | **PASS** | Typecheck, lint, 30 tests, production build, secret scan |
+| Admin report management UI | **PASS (source/tests)** | List, filters, cursor pagination, detail, update, delete, purge confirmation |
+| Admin feature controls UI | **PASS (source/tests)** | Two Phase 3 flags, 0%/100%, kill switch, confirmation, fail-closed errors |
+| Admin audit UI | **PASS (source/tests)** | Read-only, pagination, exact-action filter, no mutation control |
+| Browser secret handling | **PASS** | Public publishable key only; tab-scoped session; no service-role/DB/admin secret |
+| Vercel Preview deployment | **BLOCKED** | No valid Vercel token/session or project access |
+| Vercel private access protection | **BLOCKED** | No Vercel project/account access; unlisted URL not treated as access control |
+| `ADMIN_ORIGIN` configured | **BLOCKED** | No secret-management access and no deployed origin; no wildcard/placeholder used |
 | Privacy documentation for private distribution | **PASS** | `PRIVACY.md` updated; in-app link merge gate |
 | Reviewed translations | **BLOCKED** | No reviewed translations; scoped lint exception justified |
 | Accessibility review | **PASS (source)** | Device TalkBack blocked; two gaps documented |
@@ -438,12 +518,13 @@ A precise manual checklist for the OPPO A38 (Android 15) was added at `docs/HMXP
 
 ## 7. Remaining work before private distribution
 
-1. **Configure `ADMIN_ORIGIN` and finish admin live validation.** This requires an actual admin frontend origin, a Supabase Dashboard session or Management API token with project secret access, and a disposable staging admin user/allowlist row. Set `ADMIN_ORIGIN` through the authorized dashboard/Management API path only; do not use a wildcard or invent an origin. Then test foreign-origin rejection, unauthenticated `401`, unauthorized `403`, active-admin authorization, `reports.list/get/update/delete/purge`, and audit rows. No admin frontend source exists in this repository.
-2. **Merge the privacy policy to `main` or repoint the in-app link.** The Settings link targets `main`; until the updated `PRIVACY.md` is merged, the APK will open the previous policy.
-3. **Translate the Phase 3 strings.** Add reviewed translations to the six locales and remove the `MissingTranslation` ignore for `strings_phase3.xml`. Do not use machine-translated privacy disclosures.
-4. **Run the device QA checklist.** Use `docs/HMXPDF_PHASE3_DEVICE_QA_CHECKLIST.md` on the OPPO A38 Android 15. Record actual results; do not claim device testing before it is run.
-5. **Production deployment (not authorized).** See §8.
-6. **Update the retention copy after production verification.** The app currently says automatic 30-day deletion is not yet active. Change that only after the production scheduler has a successful run and the boundary is re-verified there.
+1. **Deploy `admin/` to a Vercel Preview and enable access protection.** This requires a valid Vercel account/session with access to the HMXPDF project, Preview-only public environment variables (`VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_ENVIRONMENT=staging`), and Deployment Protection. Record the exact Preview origin. Do not create a public Production deployment and do not treat an unlisted URL as access control.
+2. **Set `ADMIN_ORIGIN` and provision a staging admin identity.** Create a dedicated staging Supabase Auth user and an active `hmx.admin_users` row with role `admin`; do not copy a production UUID. Set `ADMIN_ORIGIN` to the exact Preview origin through the Supabase Dashboard or Management API only; no wildcard, placeholder, or invented origin. Then test foreign-origin rejection, unauthenticated `401`, non-admin `403`, authorized `session.whoami`, `reports.stats`, `reports.list/get/update/delete/purge`, `flags.list/upsert`, and audit rows.
+3. **Merge the privacy policy to `main` or repoint the in-app link.** The Settings link targets `main`; until the updated `PRIVACY.md` is merged, the APK will open the previous policy.
+4. **Translate the Phase 3 strings.** Add reviewed translations to the six locales and remove the `MissingTranslation` ignore for `strings_phase3.xml`. Do not use machine-translated privacy disclosures.
+5. **Run the device QA checklist.** Use `docs/HMXPDF_PHASE3_DEVICE_QA_CHECKLIST.md` on the OPPO A38 Android 15. Record actual results; do not claim device testing before it is run.
+6. **Production deployment (not authorized).** See §8.
+7. **Update the retention copy after production verification.** The app currently says automatic 30-day deletion is not yet active. Change that only after the production scheduler has a successful run and the boundary is re-verified there.
 
 ---
 
@@ -453,7 +534,7 @@ A precise manual checklist for the OPPO A38 (Android 15) was added at `docs/HMXP
 2. Back up production data/configuration and confirm the current function versions for rollback.
 3. Apply migrations `hmx_feature_flags` and `hmx_reports` to production; confirm RLS, grants, constraints, and purge functions.
 4. Deploy the updated `config`, `report-submit`, and `admin-api` functions. Use `verify_jwt = true` for `admin-api`, matching `supabase/config.toml`; keep `report-submit`/`config` public as designed. Confirm the release build's Supabase URL, publishable key, config endpoint, and report endpoint point to production.
-5. Set `ADMIN_ORIGIN` to the actual admin frontend origin through the Supabase Dashboard or Management API. Do not use a wildcard. Create/verify the production admin allowlist and audit path.
+5. Deploy `admin/` to an approved Vercel project with Deployment Protection, Preview first. Set `ADMIN_ORIGIN` to the actual admin frontend origin through the Supabase Dashboard or Management API. Do not use a wildcard or a public unprotected URL. Create/verify the production admin allowlist and audit path.
 6. Install `pg_cron`, apply `supabase/retention/report_retention_cron.sql`, and confirm the job is active and a run succeeds.
 7. Verify live: config rejects `install_id`/unknown fields; report-submit returns `201` and duplicate `200`; admin rejects foreign origins, unauthenticated requests, and non-allowlisted users; authorized report actions work; audit rows are written; retention deletes an expired disposable row while keeping a newer one.
 8. Rollback considerations: restore the previous function versions; remove the cron job if retention must stop; disable report submission in the app by clearing the report endpoint/publishable key if the backend must be taken out of service; do not drop `hmx.reports` without a backup and explicit authorization.
@@ -464,7 +545,10 @@ A precise manual checklist for the OPPO A38 (Android 15) was added at `docs/HMXP
 
 ## 9. Known limitations
 
-- Admin live authorization and report actions are unverified. No admin frontend exists in the repository, no admin origin is configured, and no admin user/allowlist row exists in staging.
+- Admin live authorization and report actions are unverified. The admin frontend exists at `admin/`, but no Vercel Preview exists, no admin origin is configured, and no admin user/allowlist row exists in staging.
+- No Vercel token, project, or private-access configuration is available in this environment; no Preview URL or protection status is claimed.
+- The admin frontend checks ran from a `/tmp` copy because the SD-card mount cannot execute native rollup/esbuild modules. This does not affect Vercel builds.
+- Staging `admin-api` v2 uses `verify_jwt = false` and performs its own `auth.getUser` plus allowlist check. Production `admin-api` v1 is `verify_jwt = true` but predates the Phase 3 report actions and v2 additions; the production deployment must use `verify_jwt = true` with the new code.
 - The exposed MCP tool set has no secret-management operation; `npx supabase` has no login/token; no Dashboard session or Management API token is available in this environment.
 - Local Android Gradle checks cannot run: no Android SDK, no `local.properties`, no `key.properties`, and no release signing environment. CI remains the verified build.
 - No device or emulator is available; all device QA is pending.
@@ -472,7 +556,6 @@ A precise manual checklist for the OPPO A38 (Android 15) was added at `docs/HMXP
 - The problem-description field label association and choice-chip selected-state semantics remain accessibility gaps; no TalkBack pass was possible.
 - Automatic 30-day deletion is verified on staging only. Production has no scheduler, reports table, or purge function.
 - The updated privacy policy is on the feature branch; the in-app link points to `main` until merge.
-- Staging `admin-api` v1 was deployed with `verify_jwt = false`; production `admin-api` v1 is `verify_jwt = true` but predates the Phase 3 report actions. The function performs its own auth, but the production deployment must use `verify_jwt = true` with the new code.
 - There is no backend CI workflow. Local Node/Deno/TypeScript checks are the only automated backend validation.
 - The staging project is disposable validation infrastructure; it is not the app-configured backend.
 - The debug and release APKs have not been installed or exercised on a device or emulator.
@@ -481,8 +564,8 @@ A precise manual checklist for the OPPO A38 (Android 15) was added at `docs/HMXP
 
 ## 10. Conclusion
 
-Phase 3 source is complete on the feature branch. Android CI is green on `cc8129d` and the Android source is unchanged, so the existing debug APK, five signed release APKs, and signed release bundle remain the verified artifacts. Backend source passes 69 Node tests plus Deno and strict TypeScript checks. Staging was revalidated live: both SQL suites pass, `report-submit` v2 handles normal and concurrent duplicates correctly, `config` rejects identifiers and unknown fields, and the hourly retention scheduler has seven successful runs.
+Phase 3 source is complete on the feature branch. Android CI is green on `cc8129d` and the Android source is unchanged, so the existing debug APK, five signed release APKs, and signed release bundle remain the verified artifacts. Backend source passes 72 Node tests plus Deno and strict TypeScript checks. The private admin frontend in `admin/` passes typecheck, lint, 30 tests, a production build, and a secret scan. Staging was revalidated live: both SQL suites pass, `report-submit` v2 handles normal and concurrent duplicates correctly, `config` rejects identifiers and unknown fields, the hourly retention scheduler has seven successful runs, and `admin-api` v2 is deployed with the new dashboard/audit actions.
 
-`PRIVACY.md` now describes the actual private-distribution behavior, including the limits of production retention. Admin report actions remain blocked on the missing admin origin/frontend and cannot be claimed as live-tested. Reviewed translations and device QA remain open. Production was not modified.
+`PRIVACY.md` now describes the actual private-distribution behavior, including the limits of production retention. Admin live authorization remains blocked on the missing Vercel Preview, `ADMIN_ORIGIN`, and staging admin identity, so no live authorized report/flag/audit mutation is claimed. Reviewed translations and device QA remain open. Production was not modified.
 
 **Phase 3 is not production-ready.** No production migration, deployment, secret, scheduler, data change, or signing change was made.

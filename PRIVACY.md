@@ -54,7 +54,7 @@ A user-authored description can still contain personal information; the preview,
 
 Reports are stored in a private `hmx` schema in a Supabase Postgres database. Row-level security is enabled and the public, anonymous, and authenticated roles have no table privileges. Only the service role used by the Edge Functions can access the table. There are no row-level security policies that expose reports.
 
-Admin access to reports goes through the `admin-api` Edge Function. A request must come from the configured admin web origin, carry a valid Supabase Auth session, and match an active row in `hmx.admin_users` with the `admin` role. Admin report actions are written to an audit log. Multi-factor authentication is optional in the current code. In staging the admin API is deployed but fail-closed because `ADMIN_ORIGIN` is not configured; no live admin authorization has been verified.
+Admin access to reports goes through the `admin-api` Edge Function. A request must come from the configured admin web origin, carry a valid Supabase Auth session, and match an active row in `hmx.admin_users` with the `admin` role. Admin report actions are written to an audit log. Multi-factor authentication is optional in the current code. The private admin dashboard is a separate browser app; it keeps its Supabase session per browser tab and never uses a service-role key in the browser. In staging the admin API is deployed but fail-closed because `ADMIN_ORIGIN` is not configured, the dashboard is not publicly deployed, and no live admin authorization has been verified.
 
 ## Retention and deletion
 

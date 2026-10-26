@@ -3,7 +3,7 @@
 - **Report date:** 2026-10-26
 - **Repository:** `HMXPANEL/HMXPDF`
 - **Branch:** `feature/hmxpdf-diagnostics-admin-updates`
-- **Code HEAD validated:** `2d1b2f8` (Phase 3 source) plus this report's commit (private admin panel); this report's commit is the latest commit on the feature branch
+- **Code HEAD validated:** `7c2fadd` (Phase 3 source + private admin panel); this report's commit is a docs-only follow-up on the feature branch
 - **`main` / `origin/main`:** `912e9977916c4f365147a294e60c3cd95d96960e` (unchanged)
 - **Distribution:** private APK; no Google Play listing or Data Safety work
 - **Status:** Phase 3 source and the private admin panel are complete on the feature branch. Android CI is green on `cc8129d`, and the Android source is unchanged, so the verified debug/release artifacts remain valid. Backend source passes 72 Node tests plus Deno and strict TypeScript checks. The admin frontend passes typecheck, lint, 30 tests, a production build, and a secret scan. Staging `admin-api` v2 is deployed with `session.whoami`, `reports.stats`, and bounded/filterable `audit.list`. The isolated staging project was revalidated live, including `report-submit` v2, `config` validation, both SQL suites, and the active retention scheduler. `PRIVACY.md` was rewritten for private distribution. Admin live authorization and the Vercel Preview remain **BLOCKED** on valid Vercel access, an actual Preview origin, `ADMIN_ORIGIN`, and an approved staging admin identity; reviewed translations and device QA are **BLOCKED**; production was not deployed.
@@ -21,7 +21,7 @@
 | Signed release APK (CI) | **PASS** | `hmx-pdf-release-apk`, 5 APKs, existing release signer |
 | Signed release bundle (CI) | **PASS** | `hmx-pdf-release-bundle`, `jarsigner` verified |
 | Local Android Gradle re-run | **BLOCKED** | No Android SDK; release signing environment also absent. Exact errors in §5.1 |
-| Backend source | **PASS** | Commit `24b2a90`, later fixes, and admin API v2 in this report's commit |
+| Backend source | **PASS** | Commit `24b2a90`, later fixes, and admin API v2 in `7c2fadd` |
 | Backend Node tests | **PASS** | `node --test supabase/tests/*.test.ts` → 72 passed, 0 failed |
 | Backend type checks | **PASS** | `deno check` on all four entrypoints; strict `tsc` on the pure modules |
 | Backend CI | **NOT RUN** | No backend workflow exists; only `.github/workflows/android.yml` |
@@ -63,9 +63,12 @@ The release artifacts are **private CI artifacts only**. No GitHub release, tag,
 | `ff430ec` | Record staging validation and remaining Phase 3 blockers |
 | `2a92d6f` | Clarify staging SQL suite execution |
 | `2d1b2f8` | Document private distribution and fix report upsert |
-| This report's commit | Add the private admin panel, admin API v2 actions, frontend/backend tests, and deployment documentation; refresh this report |
+| `7c2fadd` | Add the private admin panel, admin API v2 actions, tests, and deployment documentation |
+| This report's commit | Record the admin panel commit hash and CI status; refresh this report |
 
 `origin/feature/hmxpdf-diagnostics-admin-updates` matches the local feature branch after the push. `main` and `origin/main` remain at `912e9977916c4f365147a294e60c3cd95d96960e`. No force-push, rebase, merge, branch replacement, or `main` checkout occurred.
+
+GitHub Actions: commit `7c2fadd` did not trigger a workflow run because `.github/workflows/android.yml` runs only on pushes to `main`, version tags, and pull requests. The last Android CI run remains [40225659634](https://github.com/HMXPANEL/HMXPDF/actions/runs/40225659634) on `cc8129d`; Android source is unchanged. No backend workflow exists, so backend/frontend checks are local only.
 
 The only untracked files left in the working tree are the two pre-existing audit inputs that the plan requires to remain unchanged and untracked:
 

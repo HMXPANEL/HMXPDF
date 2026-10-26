@@ -268,6 +268,8 @@ An isolated free-plan project `hmxpdf-staging` (`jxeuwqmdxwqqvyhisrhg`, region `
 | `supabase/tests/reports_security.sql` | **PASS** — explicit `reports_security_tests_passed` |
 | `supabase/tests/reports_retention.sql` | **PASS** — explicit `reports_retention_tests_passed` |
 
+The psql-only `\set ON_ERROR_STOP on` line was stripped because validation ran through the MCP SQL executor; each suite's `begin; ... rollback;` body and success marker were executed unchanged.
+
 The suites confirmed RLS with no policies, no client grants, service-role-only access, all kind/field/size constraints, idempotency identity, strict `< 30 days` retention, batch clamping (1–5,000), audit-row survival, 2-day rate-limit cleanup, and service-role-only purge functions.
 
 **Live `report-submit` probes**

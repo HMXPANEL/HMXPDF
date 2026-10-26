@@ -6,7 +6,7 @@
 - **Code HEAD validated:** `7c2fadd` (Phase 3 source + private admin panel); this report's commit is a docs-only follow-up on the feature branch
 - **`main` / `origin/main`:** `912e9977916c4f365147a294e60c3cd95d96960e` (unchanged)
 - **Distribution:** private APK; no Google Play listing or Data Safety work
-- **Status:** Phase 3 source and the private admin panel are complete on the feature branch. Android CI is green on `cc8129d`, and the Android source is unchanged, so the verified debug/release artifacts remain valid. Backend source passes 72 Node tests plus Deno and strict TypeScript checks. The admin frontend passes typecheck, lint, 30 tests, a production build, and a secret scan. The admin panel is deployed to a protected Vercel Preview at `https://hmxpdf-admin-git-feature-hmxpdf-diagn-95b12e-hmxpanels-projects.vercel.app`; unauthenticated requests redirect to Vercel SSO, and the bundle contains only the public Supabase URL and publishable key. Staging `admin-api` v2 is deployed with `session.whoami`, `reports.stats`, and bounded/filterable `audit.list`. The isolated staging project was revalidated live, including `report-submit` v2, `config` validation, both SQL suites, and the active retention scheduler. `PRIVACY.md` was rewritten for private distribution. Live admin authorization remains **BLOCKED** on `ADMIN_ORIGIN` and an approved staging admin identity; reviewed translations and device QA are **BLOCKED**; production was not modified.
+- **Status:** Phase 3 source and the private admin panel are complete on the feature branch. Android CI is green on `cc8129d`, and the Android source is unchanged, so the verified debug/release artifacts remain valid. Backend source passes 72 Node tests plus Deno and strict TypeScript checks. The admin frontend passes typecheck, lint, 30 tests, a production build, and a secret scan. The admin panel is deployed to a protected Vercel Preview at `https://hmxpdf-admin-git-feature-hmxpdf-diagn-95b12e-hmxpanels-projects.vercel.app`; unauthenticated requests redirect to Vercel SSO, and the bundle contains only the public Supabase URL and publishable key. Staging `admin-api` v2 is deployed with `session.whoami`, `reports.stats`, and bounded/filterable `audit.list`. The isolated staging project was revalidated live, including `report-submit` v2, `config` validation, both SQL suites, and the active retention scheduler. `PRIVACY.md` was rewritten for private distribution. `ADMIN_ORIGIN` is configured to the exact Preview origin and the confirmed staging owner is an active admin; origin and auth-negative probes pass. The authorized live report/flag/audit matrix remains **BLOCKED** pending a real Supabase session; reviewed translations and device QA are **BLOCKED**; production was not modified.
 
 ---
 
@@ -37,8 +37,8 @@
 | `admin-api` v2 staging deployment | **PASS** | New actions deployed; fail-closed probes pass |
 | Vercel Preview deployment | **PASS** | `hmxpdf-admin` Preview `dpl_5V3xw4sJbgH2s6bQ3zyCvaCmPADP` is READY; stable branch alias recorded |
 | Vercel private access protection | **PASS** | Vercel Authentication (`all` deployments); unauthenticated `302` to Vercel SSO |
-| `ADMIN_ORIGIN` configuration | **BLOCKED** | No Supabase secret-management access; owner Dashboard/Management API action required |
-| Admin live integration | **BLOCKED** | `admin-api` fails closed with `503 admin_origin_not_configured`; staging has 0 auth users and 0 admin allowlist rows |
+| `ADMIN_ORIGIN` configuration | **PASS** | Owner set the exact Preview origin; `OPTIONS` → `204` with matching `access-control-allow-origin` |
+| Admin live integration | **BLOCKED** | Origin and auth-negative probes pass; staging has 1 auth user and 1 active admin row; authorized matrix needs a real session |
 | Privacy documentation | **PASS** | `PRIVACY.md` rewritten for private distribution; in-app link merge gate in §7 |
 | Reviewed translations | **BLOCKED** | No reviewed Phase 3 translations; scoped lint exception retained |
 | Accessibility source review | **PASS** | Labels/state descriptions/dialogs/errors audited; two gaps documented in §3.7 |
@@ -190,7 +190,7 @@ A Deno type check found that the real Supabase store called `.insert(record, { o
 - Existing admin authorization, active-allowlist checks, origin checks, and audit logging remain in front of every action. Audit records contain action metadata, not report content.
 - Request validation is strict: bounded bodies, UUID/status/kind checks, a 1–4,000 character admin note, a fixed 30-day purge age, and a bounded purge batch.
 
-Staging `admin-api` v2 is deployed with platform `verify_jwt = false`; `supabase/config.toml` specifies `true`, and the function performs its own `auth.getUser` plus active-allowlist check. Production `admin-api` v1 is deployed with `verify_jwt = true` but predates the Phase 3 report actions and v2 additions. Live staging POST, OPTIONS, and bogus-token probes currently return `503 admin_origin_not_configured`; `GET` returns `405 method_not_allowed`. Function logs show `admin-api: ADMIN_ORIGIN is not configured`. This is the intended fail-closed behavior, but it prevents live origin/auth/report-action tests until `ADMIN_ORIGIN` is configured. No admin user or allowlist row exists in staging.
+Staging `admin-api` v2 is deployed with platform `verify_jwt = false`; `supabase/config.toml` specifies `true`, and the function performs its own `auth.getUser` plus active-allowlist check. Production `admin-api` v1 is deployed with `verify_jwt = true` but predates the Phase 3 report actions and v2 additions. `ADMIN_ORIGIN` is now set to the exact Preview origin. Live probes: `OPTIONS` from that origin → `204` with matching `access-control-allow-origin`; foreign origin → `403 origin_not_allowed`; no/bogus Bearer → `401 unauthorized`; `GET` → `405 method_not_allowed`. The confirmed staging owner (`c024a3c5-46ab-4b34-ba9c-d3c87eb3bba0`, `hm9817808@gmail.com`) is the only auth user and has an active `admin` row. Authorized report/flag/audit actions remain unverified until a real session is used.
 
 ### 4.4 Config privacy
 
@@ -228,7 +228,7 @@ Applied to staging after installing `pg_cron` 1.6.4 (`cron.database_name = postg
 - The feature-branch Preview `dpl_5V3xw4sJbgH2s6bQ3zyCvaCmPADP` is READY with `target: null` at `https://hmxpdf-admin-git-feature-hmxpdf-diagn-95b12e-hmxpanels-projects.vercel.app` (deployment URL `https://hmxpdf-admin-3nrctbvwt-hmxpanels-projects.vercel.app`). It is protected by Vercel Authentication; an unauthenticated request returns `302` to `https://vercel.com/sso-api`, and no app HTML is served.
 - Vercel forces a new project's first deployment to production. To keep the admin app preview-only, the production slot is a static, SSO-protected placeholder (`dpl_ZxQg7XZ6ckj9he9xa1VJEBgyzauC`, "Not available."), not the admin build. The admin deployment itself has `target: null` (Preview) and only the branch alias.
 - The deployed bundle is `431,111` bytes with no source map; it contains only `https://jxeuwqmdxwqqvyhisrhg.supabase.co` and the public `sb_publishable_…` key. No service-role key, secret, private key, access token, or database URL is present.
-- The exposed MCP tool set has no secrets-management operation, and no Supabase access token is available locally, so `ADMIN_ORIGIN` still cannot be set from this environment.
+- The exposed MCP tool set has no secrets-management operation, so `ADMIN_ORIGIN` was set by the owner in the Supabase Dashboard and verified from this environment; no Supabase access token is available locally, so the authorized matrix needs a real session.
 
 ---
 
@@ -352,7 +352,7 @@ An isolated free-plan project `hmxpdf-staging` (`jxeuwqmdxwqqvyhisrhg`, region `
 |---|---|---|---|
 | `report-submit` | 2 | `false` | ACTIVE; live probes pass, including the concurrent duplicate race |
 | `config` | 1 | `false` | ACTIVE; live probes pass |
-| `admin-api` | 2 | `false` | ACTIVE; fails closed pending `ADMIN_ORIGIN` |
+| `admin-api` | 2 | `false` | ACTIVE; `ADMIN_ORIGIN` configured; origin/auth-negative probes pass |
 
 **SQL suites (transactional, rolled back)**
 
@@ -408,7 +408,7 @@ All live test rows and rate-limit buckets were deleted afterward. Staging is bac
 **Admin API**
 
 - `admin-api` v2 was deployed on 2026-10-26 with `index.ts`, `audit.ts`, `authz.ts`, `reports.ts`, and `_shared/report-schema.ts`; the stored function source contains `session.whoami`, `reports.stats`, and `parseAuditListQuery`, and no `.select("*")`.
-- Live probes after deployment: `GET` → `405 method_not_allowed`; `OPTIONS` → `503`; POST with no origin, `https://evil.example`, a fake Vercel origin, or a bogus Bearer token → `503 admin_origin_not_configured`. No response carried `access-control-allow-origin`. This is the intended fail-closed order while `ADMIN_ORIGIN` is unset.
+- Live probes after `ADMIN_ORIGIN` was configured: `OPTIONS` from the exact Preview origin → `204` with matching `access-control-allow-origin`; `OPTIONS` from a foreign origin → `403`; POST from a foreign origin → `403 origin_not_allowed`; no Bearer or a bogus Bearer → `401 unauthorized`; `GET` → `405 method_not_allowed`. The origin check runs before authentication, and the auth check runs before body/action validation.
 - The exposed MCP tool set has no secrets-management operation. `npx supabase` is available but has no login or access token. The admin frontend now exists at `admin/`, but no hosting/deployment credentials or Vercel project are available. There is no actual staging admin origin to configure, and inventing one or using a wildcard is prohibited.
 - No admin JWT, allowlist row, or report action was exercised live. The new origin/auth/report paths remain covered only by local Node and frontend tests.
 
@@ -466,16 +466,16 @@ A precise manual checklist for the OPPO A38 (Android 15) was added at `docs/HMXP
 | Deno type checks | **PASS** | all four entrypoints |
 | Staging `admin-api` v2 deployment | **PASS** | version 2, `verify_jwt = false`, new source verified |
 | Live fail-closed probes | **PASS** | 405/503 matrix above; no CORS allow-origin while unset |
-| Live origin rejection (`403`) | **BLOCKED** | Requires `ADMIN_ORIGIN` to be set first |
-| Live unauthenticated (`401`) | **BLOCKED** | Requires `ADMIN_ORIGIN` to be set first |
-| Live non-admin (`403`) | **BLOCKED** | Requires a staging auth user without an allowlist row |
-| Live authorized admin | **BLOCKED** | Staging has 0 auth users and 0 active admin rows |
+| Live origin rejection (`403`) | **PASS** | Foreign-origin POST and OPTIONS → `403 origin_not_allowed` |
+| Live unauthenticated (`401`) | **PASS** | No/bogus Bearer → `401 unauthorized` for every supported action |
+| Live non-admin (`403`) | **BLOCKED** | No second staging auth user; owner directed not to create one |
+| Live authorized admin | **BLOCKED** | 1 active admin row; requires a real Supabase session |
 | Live report/flag/audit mutations | **BLOCKED** | Require the authorized admin path |
 | Vercel Preview + exact URL | **PASS** | `dpl_5V3xw4sJbgH2s6bQ3zyCvaCmPADP` READY, `target: null`; branch alias recorded in §4.6 |
 | Private access protection | **PASS** | `ssoProtection: all`; unauthenticated `302` to Vercel SSO |
 | Preview bundle scan | **PASS** | `431,111` bytes; public URL + publishable key only; no source map or privileged secret |
-| `ADMIN_ORIGIN` configured | **BLOCKED** | No secret-management tool/token; probe with the real Preview origin returns `503 admin_origin_not_configured` |
-| Staging admin identity | **BLOCKED** | 0 `auth.users` and 0 `hmx.admin_users` rows |
+| `ADMIN_ORIGIN` configured | **PASS** | Exact Preview origin; `OPTIONS` `204` + matching ACAO |
+| Staging admin identity | **PASS** | `c024a3c5-46ab-4b34-ba9c-d3c87eb3bba0` / `hm9817808@gmail.com`; active `admin` row |
 
 The frontend checks were run from a copy under `/tmp` because the SD-card mount cannot execute native rollup/esbuild binaries (`failed to map segment from shared object`). The copied tree was the same source; no test was skipped or altered for this. Vercel's normal install and build are not affected by that host limitation.
 
@@ -507,7 +507,7 @@ The frontend checks were run from a copy under `/tmp` because the SD-card mount 
 | Config fails closed on unavailable/invalid/stale/disabled flags | **PASS (JVM tests)** | |
 | Retention copy marks automatic deletion as not yet active | **PASS (source)** | Staging scheduler verified; copy remains conservative until production deployment |
 | Backend strict allowlist, idempotency, rate limits, RLS/grants, purge, rate-limit cleanup | **PASS (staging SQL/live)** | Security/retention suites plus live report/config probes pass |
-| Admin authorization, active allowlist, origin checks, audit | **BLOCKED (live)** | Source/Node tests pass; `admin-api` v2 fails closed until `ADMIN_ORIGIN` is set and a staging admin exists |
+| Admin authorization, active allowlist, origin checks, audit | **PASS (origin/auth-negative)** | Source/Node tests pass; live origin `403`/`204` and unauthenticated `401` probes pass; authorized mutations remain **BLOCKED** pending a session |
 | Private admin panel source | **PASS** | `admin/` on the feature branch; no service-role key |
 | Admin frontend checks | **PASS** | Typecheck, lint, 30 tests, production build, secret scan |
 | Admin report management UI | **PASS (source/tests)** | List, filters, cursor pagination, detail, update, delete, purge confirmation |
@@ -516,7 +516,7 @@ The frontend checks were run from a copy under `/tmp` because the SD-card mount 
 | Browser secret handling | **PASS** | Public publishable key only; tab-scoped session; no service-role/DB/admin secret |
 | Vercel Preview deployment | **PASS** | Protected Preview `dpl_5V3xw4sJbgH2s6bQ3zyCvaCmPADP`, `target: null`, exact branch alias recorded |
 | Vercel private access protection | **PASS** | Vercel Authentication; unauthenticated `302` to Vercel SSO; unlisted URL not treated as access control |
-| `ADMIN_ORIGIN` configured | **BLOCKED** | No secret-management access; exact Preview origin recorded; no wildcard/placeholder used |
+| `ADMIN_ORIGIN` configured | **PASS** | Owner set the exact Preview origin; `OPTIONS` `204` + matching ACAO; no wildcard/placeholder |
 | Privacy documentation for private distribution | **PASS** | `PRIVACY.md` updated; in-app link merge gate |
 | Reviewed translations | **BLOCKED** | No reviewed translations; scoped lint exception justified |
 | Accessibility review | **PASS (source)** | Device TalkBack blocked; two gaps documented |
@@ -528,8 +528,8 @@ The frontend checks were run from a copy under `/tmp` because the SD-card mount 
 
 ## 7. Remaining work before private distribution
 
-1. **Set `ADMIN_ORIGIN` to the recorded Preview origin.** In the Supabase Dashboard for `jxeuwqmdxwqqvyhisrhg`, open Project Settings → Edge Functions → Secrets (or use the Management API with an authorized token) and add `ADMIN_ORIGIN=https://hmxpdf-admin-git-feature-hmxpdf-diagn-95b12e-hmxpanels-projects.vercel.app`. Use scheme + host only; no path, trailing slash, wildcard, or placeholder. Secrets apply without redeploying. Then verify `OPTIONS` from that origin returns `204`, a foreign origin returns `403`, and no Bearer token returns `401`.
-2. **Create the staging admin identity.** In Authentication → Users, create a dedicated staging user (auto-confirm) and record its UUID. Insert a row into `hmx.admin_users` with that `user_id`, role `admin`, and `is_active = true`; do not reuse the production UUID. Then run `session.whoami`, `reports.stats`, report list/get/update/delete/purge, flag changes, and audit reads; verify audit rows and clean up test data.
+1. **Run the authorized live matrix.** `ADMIN_ORIGIN` is set and the confirmed owner is an active admin. Sign in to the Preview (or provide a local session credential) and verify `session.whoami`, `reports.stats`, report list/get/update/delete/purge, flag reads/updates, and audit reads; create disposable staging reports, restore both flags OFF, and leave the audit rows as evidence. Do not delete audit history.
+2. **Verify non-admin denial.** This requires a second staging auth user without an active allowlist row. The owner has directed that no additional auth user be created, so this remains **BLOCKED** unless that changes.
 3. **Merge the privacy policy to `main` or repoint the in-app link.** The Settings link targets `main`; until the updated `PRIVACY.md` is merged, the APK will open the previous policy.
 4. **Translate the Phase 3 strings.** Add reviewed translations to the six locales and remove the `MissingTranslation` ignore for `strings_phase3.xml`. Do not use machine-translated privacy disclosures.
 5. **Run the device QA checklist.** Use `docs/HMXPDF_PHASE3_DEVICE_QA_CHECKLIST.md` on the OPPO A38 Android 15. Record actual results; do not claim device testing before it is run.
@@ -555,11 +555,11 @@ The frontend checks were run from a copy under `/tmp` because the SD-card mount 
 
 ## 9. Known limitations
 
-- Admin live authorization and report actions are unverified. The admin panel is deployed to a protected Vercel Preview, but `ADMIN_ORIGIN` is unset and staging has no auth user/allowlist row.
+- Authorized admin report/flag/audit actions are unverified. The protected Preview, `ADMIN_ORIGIN`, and the active owner allowlist row are in place, but no real Supabase session has been used yet; origin and unauthenticated probes pass.
 - Vercel forces a new project's first deployment to production. The production slot is a static, SSO-protected placeholder, not the admin build; the admin app is Preview-only. Future branch deployments remain previews while the placeholder is retained.
 - The admin frontend checks ran from a `/tmp` copy because the SD-card mount cannot execute native rollup/esbuild modules. This does not affect Vercel builds.
 - Staging `admin-api` v2 uses `verify_jwt = false` and performs its own `auth.getUser` plus allowlist check. Production `admin-api` v1 is `verify_jwt = true` but predates the Phase 3 report actions and v2 additions; the production deployment must use `verify_jwt = true` with the new code.
-- The exposed MCP tool set has no secret-management operation; no Supabase access token is available locally, so `ADMIN_ORIGIN` requires an owner Dashboard/Management API action.
+- The exposed MCP tool set has no secret-management operation; `ADMIN_ORIGIN` was set by the owner and verified. No Supabase session or access token is available locally, so the authorized matrix requires an owner-provided session or a local credential file.
 - Local Android Gradle checks cannot run: no Android SDK, no `local.properties`, no `key.properties`, and no release signing environment. CI remains the verified build.
 - No device or emulator is available; all device QA is pending.
 - Reviewed Phase 3 translations are unavailable; six locales fall back to English.
@@ -576,6 +576,6 @@ The frontend checks were run from a copy under `/tmp` because the SD-card mount 
 
 Phase 3 source is complete on the feature branch. Android CI is green on `cc8129d` and the Android source is unchanged, so the existing debug APK, five signed release APKs, and signed release bundle remain the verified artifacts. Backend source passes 72 Node tests plus Deno and strict TypeScript checks. The private admin frontend in `admin/` passes typecheck, lint, 30 tests, a production build, and a secret scan, and is deployed to a protected Vercel Preview at `https://hmxpdf-admin-git-feature-hmxpdf-diagn-95b12e-hmxpanels-projects.vercel.app`; unauthenticated requests redirect to Vercel SSO. Staging was revalidated live: both SQL suites pass, `report-submit` v2 handles normal and concurrent duplicates correctly, `config` rejects identifiers and unknown fields, the hourly retention scheduler has seven successful runs, and `admin-api` v2 is deployed with the new dashboard/audit actions.
 
-`PRIVACY.md` now describes the actual private-distribution behavior, including the limits of production retention. Admin live authorization remains blocked on `ADMIN_ORIGIN` and the staging admin identity, so no live authorized report/flag/audit mutation is claimed. Reviewed translations and device QA remain open. Production was not modified.
+`PRIVACY.md` now describes the actual private-distribution behavior, including the limits of production retention. `ADMIN_ORIGIN` is configured and the confirmed staging owner is an active admin; origin and unauthenticated probes pass. No live authorized report/flag/audit mutation is claimed until a real session is used. Reviewed translations and device QA remain open. Production was not modified.
 
 **Phase 3 is not production-ready.** No production migration, deployment, secret, scheduler, data change, or signing change was made.

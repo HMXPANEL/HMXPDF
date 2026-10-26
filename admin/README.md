@@ -97,9 +97,8 @@ must be performed by an account with access to the Vercel project.
   `https://hmxpdf-admin-git-feature-hmxpdf-diagn-95b12e-hmxpanels-projects.vercel.app`
 - Deployment URL:
   `https://hmxpdf-admin-3nrctbvwt-hmxpanels-projects.vercel.app`
-- Vercel Authentication is enabled (`ssoProtection:
-  all_except_custom_domains`). An unauthenticated request returns `302` to
-  `https://vercel.com/sso-api`; no app HTML is served.
+- Vercel Authentication is enabled (`ssoProtection: all`). An unauthenticated
+  request returns `302` to `https://vercel.com/sso-api`; no app HTML is served.
 - Preview-only, non-sensitive variables: `VITE_SUPABASE_URL`,
   `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_ENVIRONMENT=staging`.
 - Vercel forces a new project's first deployment to production. The production

@@ -36,7 +36,7 @@
 | Admin frontend secret scan | **PASS** | No privileged secret or source map in source/bundle |
 | `admin-api` v2 staging deployment | **PASS** | New actions deployed; fail-closed probes pass |
 | Vercel Preview deployment | **PASS** | `hmxpdf-admin` Preview `dpl_5V3xw4sJbgH2s6bQ3zyCvaCmPADP` is READY; stable branch alias recorded |
-| Vercel private access protection | **PASS** | Vercel Authentication (`all_except_custom_domains`); unauthenticated `302` to Vercel SSO |
+| Vercel private access protection | **PASS** | Vercel Authentication (`all` deployments); unauthenticated `302` to Vercel SSO |
 | `ADMIN_ORIGIN` configuration | **BLOCKED** | No Supabase secret-management access; owner Dashboard/Management API action required |
 | Admin live integration | **BLOCKED** | `admin-api` fails closed with `503 admin_origin_not_configured`; staging has 0 auth users and 0 admin allowlist rows |
 | Privacy documentation | **PASS** | `PRIVACY.md` rewritten for private distribution; in-app link merge gate in §7 |
@@ -472,7 +472,7 @@ A precise manual checklist for the OPPO A38 (Android 15) was added at `docs/HMXP
 | Live authorized admin | **BLOCKED** | Staging has 0 auth users and 0 active admin rows |
 | Live report/flag/audit mutations | **BLOCKED** | Require the authorized admin path |
 | Vercel Preview + exact URL | **PASS** | `dpl_5V3xw4sJbgH2s6bQ3zyCvaCmPADP` READY, `target: null`; branch alias recorded in §4.6 |
-| Private access protection | **PASS** | `ssoProtection: all_except_custom_domains`; unauthenticated `302` to Vercel SSO |
+| Private access protection | **PASS** | `ssoProtection: all`; unauthenticated `302` to Vercel SSO |
 | Preview bundle scan | **PASS** | `431,111` bytes; public URL + publishable key only; no source map or privileged secret |
 | `ADMIN_ORIGIN` configured | **BLOCKED** | No secret-management tool/token; probe with the real Preview origin returns `503 admin_origin_not_configured` |
 | Staging admin identity | **BLOCKED** | 0 `auth.users` and 0 `hmx.admin_users` rows |

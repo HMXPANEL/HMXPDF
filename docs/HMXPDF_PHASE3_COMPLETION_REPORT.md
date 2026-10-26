@@ -3,9 +3,10 @@
 - **Report date:** 2026-10-26
 - **Repository:** `HMXPANEL/HMXPDF`
 - **Branch:** `feature/hmxpdf-diagnostics-admin-updates`
-- **Code HEAD validated:** `24b2a902a40be7c3b3598669f9dd42112927d5d3` (source); report commit follows `d394143`
+- **Code HEAD validated:** `2a92d6fd116207a0f3212be6e383f55d4fa9f150` (source); this report's commit is the latest commit on the feature branch
 - **`main` / `origin/main`:** `912e9977916c4f365147a294e60c3cd95d96960e` (unchanged)
-- **Status:** Phase 3 source is complete on the feature branch. Android CI, JVM tests, lint, debug APK, and signed release artifacts pass. The backend was deployed to an isolated staging project and validated live: migrations, SQL security/retention suites, `report-submit`, `config`, and the hourly retention scheduler pass. **Production was not deployed.** Admin report actions remain **BLOCKED** on the `ADMIN_ORIGIN` secret, and policy, translations, and device QA remain open.
+- **Distribution:** private APK; no Google Play listing or Data Safety work
+- **Status:** Phase 3 source is complete on the feature branch. Android CI is green on `cc8129d`, and the Android source is unchanged, so the verified debug/release artifacts remain valid. Backend source passes Node and Deno checks. The isolated staging project was revalidated live, including `report-submit` v2 after a Supabase JS API fix, `config` validation, both SQL suites, and the active retention scheduler. `PRIVACY.md` was rewritten for private distribution. Admin live authorization remains **BLOCKED** on `ADMIN_ORIGIN`; reviewed translations and device QA are **BLOCKED**; production was not deployed.
 
 ---
 
@@ -13,26 +14,31 @@
 
 | Gate | Status | Evidence |
 |---|---|---|
-| Android implementation | **COMPLETE** | Commits `deb6373`, `4f47bdf`, `cc8129d` |
-| Android JVM tests | **PASS** | CI run [40225659634](https://github.com/HMXPANEL/HMXPDF/actions/runs/40225659634), build job step 5 |
-| Android lint | **PASS** | 0 errors, 24 warnings, 1 hint; pre-existing baseline unchanged |
-| Debug APK | **PASS** | `hmx-pdf-debug-apk`, 5 APKs, Android Debug signer |
-| Signed release APK | **PASS** | `hmx-pdf-release-apk`, 5 APKs, existing release signer |
-| Signed release bundle | **PASS** | `hmx-pdf-release-bundle`, `jarsigner` verified |
-| Backend source | **COMPLETE** | Commit `24b2a90` |
+| Android implementation | **PASS** | Commits `deb6373`, `4f47bdf`, `cc8129d` |
+| Android JVM tests (CI) | **PASS** | CI run [40225659634](https://github.com/HMXPANEL/HMXPDF/actions/runs/40225659634), build job |
+| Android lint (CI) | **PASS** | Same run; 0 errors, 24 warnings, 1 hint; baseline unchanged |
+| Debug APK (CI) | **PASS** | `hmx-pdf-debug-apk`, 5 APKs, Android Debug signer |
+| Signed release APK (CI) | **PASS** | `hmx-pdf-release-apk`, 5 APKs, existing release signer |
+| Signed release bundle (CI) | **PASS** | `hmx-pdf-release-bundle`, `jarsigner` verified |
+| Local Android Gradle re-run | **BLOCKED** | No Android SDK; release signing environment also absent. Exact errors in §5.1 |
+| Backend source | **PASS** | Commit `24b2a90` plus the `report-submit` fix in this report's commit |
 | Backend Node tests | **PASS** | `node --test supabase/tests/*.test.ts` → 69 passed, 0 failed |
-| Backend syntax checks | **PASS** | `node --check` on 12 Supabase TypeScript files |
+| Backend type checks | **PASS** | `deno check` on all four entrypoints; strict `tsc` on the pure modules |
 | Backend CI | **NOT RUN** | No backend workflow exists; only `.github/workflows/android.yml` |
-| SQL security suite | **PASS** | Executed on staging `jxeuwqmdxwqqvyhisrhg`; explicit `reports_security_tests_passed` |
-| SQL retention suite | **PASS** | Executed on staging; explicit `reports_retention_tests_passed` |
-| Deno runtime execution | **PASS** | `report-submit` v1, `config` v1, and `admin-api` v1 deployed ACTIVE on staging; live probes below |
-| Staging deployment | **PASS** | Two migrations, three Edge Functions, and the retention scheduler applied to staging |
-| Automatic retention | **PASS (staging)** | `pg_cron` 1.6.4 job active; four successful runs; 30-day purge observed. Production **NOT RUN** |
-| Admin live integration | **BLOCKED** | `admin-api` fails closed with 503 because `ADMIN_ORIGIN` cannot be set via the exposed MCP tools |
-| Production deployment | **NOT RUN** | No production migration, function, secret, or scheduler change |
-| Privacy policy / store metadata | **NOT RUN** | `PRIVACY.md` is outdated and must be updated before distribution |
-| New-string translations | **NOT RUN** | English-first by plan; lint scoped to the Phase 3 strings only |
-| Device/emulator QA | **NOT RUN** | No Android SDK, emulator, or device in this environment |
+| SQL security suite | **PASS** | Rerun on staging; explicit `security_ok` marker after the full suite |
+| SQL retention suite | **PASS** | Rerun on staging; explicit `retention_ok` marker after the full suite |
+| Staging deployment | **PASS** | Migrations, `report-submit` v2, `config` v1, `admin-api` v1, retention scheduler |
+| `report-submit` live | **PASS** | Valid `201`, duplicate `200`, concurrent race `201` + `200`; rows cleaned |
+| `config` live | **PASS** | Valid `200`; `install_id`, unknown fields, and invalid keys rejected |
+| Automatic retention (staging) | **PASS** | `pg_cron` job active; runids 1–7 succeeded through 04:17 UTC; 30-day purge observed |
+| Admin live integration | **BLOCKED** | `admin-api` fails closed with `503 admin_origin_not_configured`; no admin origin, frontend, or admin user exists |
+| Privacy documentation | **PASS** | `PRIVACY.md` rewritten for private distribution; in-app link merge gate in §7 |
+| Reviewed translations | **BLOCKED** | No reviewed Phase 3 translations; scoped lint exception retained |
+| Accessibility source review | **PASS** | Labels/state descriptions/dialogs/errors audited; two gaps documented in §3.7 |
+| TalkBack device verification | **BLOCKED** | No device or emulator |
+| Device/emulator QA | **BLOCKED** | `adb devices` empty; no Android SDK; manual checklist added |
+| Production deployment | **NOT RUN** | Read-only inspection only; no production writes |
+| Production retention | **NOT RUN** | No `pg_cron`, reports table, or purge function in production |
 
 The release artifacts are **private CI artifacts only**. No GitHub release, tag, public upload, or production deployment was created. The existing release signing identity was reused; no new signing identity was created.
 
@@ -47,8 +53,11 @@ The release artifacts are **private CI artifacts only**. No GitHub release, tag,
 | `cc8129d` | Scope missing-translation lint to Phase 3 strings |
 | `24b2a90` | Add Phase 3 reports backend, retention, and config privacy |
 | `d394143` | Document Phase 3 completion and open deployment gates |
+| `ff430ec` | Record staging validation and remaining Phase 3 blockers |
+| `2a92d6f` | Clarify staging SQL suite execution |
+| This report's commit | Update private-distribution privacy policy, fix `report-submit` insert/upsert, add the source assertion and device QA checklist, refresh this report |
 
-`origin/feature/hmxpdf-diagnostics-admin-updates` matches the local feature branch. `main` and `origin/main` remain at `912e9977916c4f365147a294e60c3cd95d96960e`. No force-push, rebase, merge, branch replacement, or `main` checkout occurred.
+`origin/feature/hmxpdf-diagnostics-admin-updates` matches the local feature branch after the push. `main` and `origin/main` remain at `912e9977916c4f365147a294e60c3cd95d96960e`. No force-push, rebase, merge, branch replacement, or `main` checkout occurred.
 
 The only untracked files left in the working tree are the two pre-existing audit inputs that the plan requires to remain unchanged and untracked:
 
@@ -62,7 +71,7 @@ The only untracked files left in the working tree are the two pre-existing audit
 ### 3.1 First-run privacy flow
 
 - The existing seven-page feature tour is unchanged.
-- After the tour, the app shows **Privacy & Security** (step 1) and **Diagnostic & Support Preferences** (step 2), then Home or What's New.
+- After the tour, the app shows **Privacy & Security** (step 1) and **Diagnostic Preferences** (step 2), then Home or What's New.
 - Both consent options default **OFF**.
 - **Next** on step 2 saves the exact selections. **Not now** saves both OFF.
 - The decision is persisted in `clearpdf_privacy.xml`; ordinary restarts do not show the flow again.
@@ -110,7 +119,25 @@ The only untracked files left in the working tree are the two pre-existing audit
 - 130 Phase 3 privacy/report strings were moved to `app/src/main/res/values/strings_phase3.xml`.
 - `app/lint.xml` suppresses `MissingTranslation` **for that file only**, because the plan forbids machine-translated privacy disclosures. All other resource files keep the check.
 - `lintConfig = file("lint.xml")` makes the scoping explicit.
+- The six supported non-English locale directories (`ar`, `es`, `it`, `pt`, `pt-rBR`, `ru`) contain no Phase 3 strings; English fallback is intentional until reviewed translations exist.
 - Remove the ignore when reviewed translations are added.
+
+### 3.7 Accessibility source review
+
+Present in source:
+
+- Privacy preference toggles have `contentDescription` set to the row title and `stateDescription` set to **On**/**Off**, with a 48 dp minimum target.
+- Section titles use heading semantics.
+- Step progress is also expressed as text (`Step 1 of 2` / `Step 2 of 2`).
+- Confirmation dialogs have explicit titles, bodies, and labelled Cancel/Send or Cancel/Discard actions.
+- Error states are text messages; adjacent icons are decorative (`contentDescription = null`).
+- Report buttons use visible text labels; pending reports show state and attempt count as text.
+
+Source-audit gaps (not changed in this pass):
+
+- The problem-description `BasicTextField` has a separate visible label and hint but no explicit semantics association, so TalkBack may not announce the field label when focus enters it.
+- `GlassChoiceChip` exposes its text label but not a selected-state semantic, so category selection may not be announced as selected.
+- No TalkBack pass was possible without a device/emulator. These gaps are recorded for the manual QA checklist rather than claimed as verified.
 
 ---
 
@@ -127,7 +154,7 @@ The only untracked files left in the working tree are the two pre-existing audit
 - `hmx.purge_expired_rate_limits(batch_size)` deleting at most 1–20,000 buckets older than 2 days, with a supporting index.
 - Default-OFF, 0% seeds for `diagnostics.enabled` and `problem_reports.enabled`.
 
-Applied to staging as migration `20261026013546 hmx_reports`; the transactional security and retention suites passed against it.
+Applied to staging as migration `20261026013546 hmx_reports`; the transactional security and retention suites pass against it.
 
 ### 4.2 `report-submit`
 
@@ -136,11 +163,10 @@ Applied to staging as migration `20261026013546 hmx_reports`; the transactional 
 - Unknown fields, including `device_model`, are rejected.
 - Duplicate lookup happens before rate-limit consumption so a lost response can be retried without a false 429.
 - Hashed-IP bucket: 10/hour. Hashed install bucket: 5/hour and 20/24 hours.
-- Insert uses the unique identity with duplicate suppression; a concurrent race resolves to the existing row.
 - Success returns only `report_id`, `status`, and `received_at`; `duplicate: true` is added for an existing row.
 - Rate-limiter errors fail closed with 503.
 
-Deployed to staging as `report-submit` v1 (`verify_jwt = false`) and exercised with live requests.
+A Deno type check found that the real Supabase store called `.insert(record, { onConflict, ignoreDuplicates })`, but `onConflict`/`ignoreDuplicates` are `upsert` options in `supabase-js`, not `insert` options. The store now uses `.upsert(record, { onConflict: "install_id,client_report_id", ignoreDuplicates: true })`. A source assertion was added to `supabase/tests/phase3_source.test.ts`. Staging was redeployed as `report-submit` v2 and re-tested with both a normal duplicate retry and a concurrent duplicate race.
 
 ### 4.3 Admin API
 
@@ -149,7 +175,7 @@ Deployed to staging as `report-submit` v1 (`verify_jwt = false`) and exercised w
 - List filters and limits are validated; update accepts only `status` and `admin_notes`; purge is fixed at 30 days and a bounded batch.
 - Audit records contain action metadata, not report content.
 
-Deployed to staging as `admin-api` v1 (`verify_jwt = false`). Live POST and OPTIONS requests currently return `503 admin_origin_not_configured`; `GET` returns `405 method_not_allowed`. This is the intended fail-closed behavior, but it prevents live admin authorization and report-action tests until `ADMIN_ORIGIN` is configured.
+Staging `admin-api` v1 is deployed with platform `verify_jwt = false`; `supabase/config.toml` specifies `true`, and the function performs its own `auth.getUser` plus active-allowlist check. Production `admin-api` v1 is deployed with `verify_jwt = true` but predates the Phase 3 report actions. Live staging POST and OPTIONS requests currently return `503 admin_origin_not_configured`; `GET` returns `405 method_not_allowed`. Function logs show `admin-api: ADMIN_ORIGIN is not configured`. This is the intended fail-closed behavior, but it prevents live admin authorization and report-action tests until `ADMIN_ORIGIN` is configured. No admin user or allowlist row exists in staging.
 
 ### 4.4 Config privacy
 
@@ -169,15 +195,15 @@ Deployed to staging as `config` v1 (`verify_jwt = false`) and exercised with liv
 - Schedules an hourly run at minute 17.
 - Includes verification queries for `cron.job`, `cron.job_run_details`, and expired-row counts.
 
-Applied to staging after installing `pg_cron` 1.6.4 (`cron.database_name = postgres`, `cron.timezone = GMT`). Job `hmx-purge-expired-reports` (jobid 1) is active at `17 * * * *`; four runs succeeded in `cron.job_run_details`. It has **not** been applied to production.
+Applied to staging after installing `pg_cron` 1.6.4 (`cron.database_name = postgres`, `cron.timezone = GMT`). Job `hmx-purge-expired-reports` (jobid 1) is active at `17 * * * *`; runids 1–7 succeeded in `cron.job_run_details` through 2026-10-26 04:17 UTC. It has **not** been applied to production.
 
 ---
 
 ## 5. Verification evidence
 
-### 5.1 Android CI
+### 5.1 Android CI and local Gradle checks
 
-Run: [40225659634](https://github.com/HMXPANEL/HMXPDF/actions/runs/40225659634) on `cc8129d` (Android source unchanged by the later docs/backend commit).
+CI run: [40225659634](https://github.com/HMXPANEL/HMXPDF/actions/runs/40225659634) on `cc8129d` (Android source unchanged by later docs/backend commits).
 
 | Job | Result | Steps |
 |---|---|---|
@@ -187,17 +213,32 @@ Run: [40225659634](https://github.com/HMXPANEL/HMXPDF/actions/runs/40225659634) 
 
 Lint result: `Lint found 24 warnings, 1 hint (and 72 errors, 320 warnings and 8 hints filtered by baseline lint-baseline.xml)`. The 72 baseline errors are pre-existing; the new Phase 3 strings no longer produce `MissingTranslation` errors.
 
+Local re-run was attempted with `bash gradlew` because `gradlew` lacks the executable bit in this checkout (the file mode was not changed):
+
+```bash
+bash gradlew testPlayDebugUnitTest :pdf-core:test :ocr-core:test
+bash gradlew lintPlayDebug assemblePlayDebug :pdf-core:test :ocr-core:test
+bash gradlew lintPlayDebug assemblePlayDebug assemblePlayRelease bundlePlayRelease :pdf-core:test :ocr-core:test
+```
+
+Results:
+
+- Unit tests, lint, debug APK, `:pdf-core:test`, and `:ocr-core:test`: **BLOCKED** — `SDK location not found. Define a valid SDK location with an ANDROID_HOME environment variable or by setting the sdk.dir path ...`.
+- Release APK/bundle: **BLOCKED** — `Release signing is not configured. Set CLEARPDF_UPLOAD_STORE_FILE, CLEARPDF_UPLOAD_STORE_PASSWORD, CLEARPDF_UPLOAD_KEY_ALIAS and CLEARPDF_UPLOAD_KEY_PASSWORD (or key.properties) before building a release artifact.` No `key.properties` exists and no signing secrets are present. No new signing identity was created.
+
+The CI artifacts remain the verified build for the unchanged Android source.
+
 ### 5.2 Android artifacts
 
-Downloaded from the CI run and verified locally:
+From the successful CI run; not rebuilt because Android source is unchanged:
 
-| Artifact | Contents | Signature |
-|---|---|---|
-| `hmx-pdf-debug-apk` | 5 debug APKs (arm64-v8a, armeabi-v7a, universal, x86, x86_64) | Android Debug, SHA-256 `55c522257ada04efd391b4607d2d3a7f4477417eea1b996fee5051fb50d32351` |
-| `hmx-pdf-release-apk` | 5 release APKs | Existing release certificate, SHA-256 `e30ab37d83b52a0fd8a15da51a0d323107043daa9ac773fa44f17968348614d3` on all five |
-| `hmx-pdf-release-bundle` | `app-play-release.aab` | `jarsigner` verified; same release DN, self-signed, expires 2054-03-10 |
+| Artifact | Contents | Size | Archive SHA-256 |
+|---|---|---|---|
+| `hmx-pdf-debug-apk` | 5 debug APKs | 270,216,331 bytes | `b3318dd5dbaebcab98c3b7ca392293f6133885bfec3f554891acd083dd776f80` |
+| `hmx-pdf-release-apk` | 5 release APKs | 132,999,214 bytes | `c36cfb3ae96714dbe269d3512209c551c6d66b74cb6c76e45973e27695746a4f` |
+| `hmx-pdf-release-bundle` | `app-play-release.aab` | 50,421,429 bytes | `a87768b667770f4ec73ed21b363827c55832822517095df42c4a59dad76a795f` |
 
-Artifact sizes: debug zip 270,216,331 bytes; release zip 132,999,214 bytes; bundle zip 50,421,429 bytes.
+The hashes above are GitHub's SHA-256 of the downloaded artifact archives. Earlier local verification found the debug APK signed by Android Debug, the five release APKs signed by the existing release certificate, and the AAB `jarsigner`-verified with the same release DN. The run page is the private CI link; the artifact downloads require repository authentication.
 
 ### 5.3 Backend local checks
 
@@ -205,26 +246,28 @@ Commands run on the committed tree:
 
 ```bash
 node --test supabase/tests/*.test.ts
-node --check supabase/functions/report-submit/index.ts
-node --check supabase/functions/report-submit/handler.ts
-node --check supabase/functions/admin-api/index.ts
-node --check supabase/functions/admin-api/reports.ts
-node --check supabase/functions/config/index.ts
-node --check supabase/functions/config/request.ts
-node --check supabase/functions/_shared/report-schema.ts
+npx --yes deno check supabase/functions/admin-api/index.ts \
+  supabase/functions/report-submit/index.ts \
+  supabase/functions/config/index.ts \
+  supabase/functions/tester-enroll/index.ts
+npx --yes -p typescript@5.9.3 tsc --noEmit --strict --target es2022 \
+  --module nodenext --moduleResolution nodenext \
+  --allowImportingTsExtensions --skipLibCheck \
+  supabase/functions/config/request.ts supabase/functions/config/rollout.ts \
+  supabase/functions/admin-api/authz.ts supabase/functions/admin-api/reports.ts \
+  supabase/functions/report-submit/handler.ts
 ```
 
-Result: **69 passed, 0 failed, 0 skipped, 0 todo**; all seven source files listed above and the five new TypeScript test files parse.
+Result: **69 passed, 0 failed, 0 skipped, 0 todo**; Deno type checking passes for all four entrypoints; strict TypeScript checking passes for the pure modules. The Deno check caught the `insert`/`upsert` misuse described in §4.2; after the fix and the added source assertion, both checks pass.
 
 Additional static checks:
 
 - `git diff --check` clean.
-- XML parsed successfully for the manifest, both backup-rule files, both string files, `lint.xml`, and the lint baseline.
-- Secret scan found no service-role key, private key, token, or password in the new source.
+- Secret scan found no service-role key, private key, token, or password in the changed source.
 - No `device_model`, document content, filename, path, URI, annotation, form value, signature, password, token, raw log, screenshot, location, contact, or hardware identifier field exists in the report schema or Android payload.
 - No production caller of a periodic report uploader or WorkManager report scheduler.
 
-### 5.4 Read-only deployment check
+### 5.4 Production read-only check
 
 The pre-existing app-configured project (`tchoqlaqgcrbbvomaebo`) was inspected read-only and left unchanged:
 
@@ -235,9 +278,11 @@ The pre-existing app-configured project (`tchoqlaqgcrbbvomaebo`) was inspected r
 | `hmx.purge_expired_rate_limits(integer)` | **absent** |
 | `pg_cron` extension | **absent** |
 | Phase 3 flag seeds | **absent** |
+| Migrations | only `hmx_feature_flags` (`20261024105232`) |
 | `report-submit` Edge Function | **not deployed** |
 | Deployed `config` | **version 3**; still accepts optional `install_id`; no `install_id_not_allowed` rejection |
-| Deployed `admin-api` | **version 1**; no `reports.list` or `reports.purge` |
+| Deployed `admin-api` | **version 1**, `verify_jwt = true`; no `reports.list` or `reports.purge` |
+| Deployed `tester-enroll` | **version 3** |
 
 No production SQL writes, migrations, deployments, or live probes were performed.
 
@@ -257,7 +302,7 @@ An isolated free-plan project `hmxpdf-staging` (`jxeuwqmdxwqqvyhisrhg`, region `
 
 | Function | Version | `verify_jwt` | Result |
 |---|---|---|---|
-| `report-submit` | 1 | `false` | ACTIVE; live probes pass |
+| `report-submit` | 2 | `false` | ACTIVE; live probes pass, including the concurrent duplicate race |
 | `config` | 1 | `false` | ACTIVE; live probes pass |
 | `admin-api` | 1 | `false` | ACTIVE; fails closed pending `ADMIN_ORIGIN` |
 
@@ -265,25 +310,27 @@ An isolated free-plan project `hmxpdf-staging` (`jxeuwqmdxwqqvyhisrhg`, region `
 
 | Suite | Result |
 |---|---|
-| `supabase/tests/reports_security.sql` | **PASS** — explicit `reports_security_tests_passed` |
-| `supabase/tests/reports_retention.sql` | **PASS** — explicit `reports_retention_tests_passed` |
+| `supabase/tests/reports_security.sql` | **PASS** — full suite reached the end; `security_ok` marker returned |
+| `supabase/tests/reports_retention.sql` | **PASS** — full suite reached the end; `retention_ok` marker returned |
 
-The psql-only `\set ON_ERROR_STOP on` line was stripped because validation ran through the MCP SQL executor; each suite's `begin; ... rollback;` body and success marker were executed unchanged.
+The psql-only `\set ON_ERROR_STOP on` line was stripped because validation ran through the MCP SQL executor; each suite's `begin; ... rollback;` body and success marker were executed unchanged. The marker query was appended only to prove the script reached its end; it did not alter the suite body. Staging counts after both suites: 0 reports, 0 rate-limit buckets, 0 audit rows.
 
 The suites confirmed RLS with no policies, no client grants, service-role-only access, all kind/field/size constraints, idempotency identity, strict `< 30 days` retention, batch clamping (1–5,000), audit-row survival, 2-day rate-limit cleanup, and service-role-only purge functions.
 
-**Live `report-submit` probes**
+**Live `report-submit` probes (v2)**
 
 | Probe | Result |
 |---|---|
 | Valid diagnostic | `201` with `report_id`, `status`, `received_at` |
-| Duplicate diagnostic | `200` with `duplicate: true` |
-| Valid problem | `201` |
+| Same payload retried | `200` with the same `report_id` and `duplicate: true` |
+| Concurrent duplicate race | `201` on one request and `200 duplicate: true` on the other; exactly one row |
 | Unknown field (`device_model`) | `400 unknown_field` |
 | Invalid kind | `400 invalid_kind` |
 | Oversized body | `413 body_too_large` |
 | Install rate limit (5/hour) | `429 rate_limited`, `retry-after: 3600` |
 | IP rate limit (10/hour) | `429 rate_limited` after the limit |
+
+All live test rows and rate-limit buckets were deleted afterward. Staging is back to 0 reports and 0 rate-limit buckets.
 
 **Live `config` probes**
 
@@ -306,15 +353,50 @@ The suites confirmed RLS with no policies, no client grants, service-role-only a
 - `supabase/retention/report_retention_cron.sql` applied with SQL execution, not as a repository migration.
 - Job `hmx-purge-expired-reports` (jobid 1) is active at `17 * * * *`, owner `postgres`, database `postgres`.
 - Temporarily changed to `* * * * *` to obtain scheduler run history, then restored to `17 * * * *`.
-- `cron.job_run_details`: runids 1–4, all `succeeded`.
+- `cron.job_run_details`: runids 1–7, all `succeeded`, through 2026-10-26 04:17 UTC.
 - Disposable rows: a 31-day-old and a 30-day-plus-1-hour report were deleted; 29-day-23-hour and fresh reports were kept. A 3-day-old rate-limit bucket was deleted; a fresh bucket was kept.
-- The exact 30-day boundary is strict (`<`) and was covered by the SQL retention suite. All test rows were removed afterward; staging currently has 0 reports and 0 rate-limit buckets.
+- The exact 30-day boundary is strict (`<`) and was covered by the SQL retention suite. All test rows were removed afterward.
 
 **Admin API**
 
-- Deployment succeeded, but live POST and OPTIONS requests return `503 admin_origin_not_configured`; `GET` returns `405 method_not_allowed`. Function logs show `admin-api: ADMIN_ORIGIN is not configured`.
-- The exposed MCP tool set has no secrets-management operation, so `ADMIN_ORIGIN` cannot be set from this environment. This is an environment/credential blocker, not a source defect.
+- Deployment succeeded, but live POST and OPTIONS requests return `503 admin_origin_not_configured`; `GET` returns `405 method_not_allowed`. Function logs show three `admin-api: ADMIN_ORIGIN is not configured` errors at 05:04:29–05:04:30 UTC, matching the three POST probes.
+- The exposed MCP tool set has no secrets-management operation. `npx supabase` is available but has no login or access token. No admin frontend source exists in the repository, and no hosting/deployment credentials or Vercel project are available. There is no actual staging admin origin to configure, and inventing one or using a wildcard is prohibited.
 - No admin JWT, allowlist row, or report action was exercised live. Admin report actions remain covered only by local Node tests.
+
+**Staging cleanup state**
+
+`hmx.reports` 0, `hmx.rate_limits` 0, `hmx.testers` 0, `hmx.admin_users` 0, `hmx.admin_audit_log` 0, `auth.users` 0, global kill switch `false`, Phase 3 flags OFF with 0% rollout.
+
+### 5.6 Privacy documentation
+
+`PRIVACY.md` was rewritten for private APK distribution. It now discloses:
+
+- On-device document processing by default.
+- The remote-configuration request fields (`keys` plus `app_version_code`) and that it runs after privacy onboarding/once per launch, with no install ID.
+- Optional diagnostic/problem reports, explicit confirmation, preview, no background upload or automatic retry, and pending local reports.
+- The report-only random install ID, its private no-backup storage, its reset behavior, and its deduplication/rate-limit purpose.
+- Exact report fields for both report types, the optional attached-error schema field, and the current UI not filling it.
+- Deliberately excluded data and the limits of client-side sanitization.
+- Server storage in the private `hmx` schema, RLS with no policies, service-role-only access, admin origin/auth/allowlist/audit controls, and the current optional MFA.
+- Staging-verified 30-day retention and 2-day rate-limit cleanup, plus the explicit limitation that production retention is not deployed or verified.
+- Pending-report deletion, no self-service server deletion, and how to request deletion.
+- Private distribution status and the absence of a Play Store listing/Data Safety form.
+
+The in-app policy link still points to `https://github.com/HMXPANEL/HMXPDF/blob/main/PRIVACY.md`. Because `main` was not modified, the updated policy will not be visible through that link until the feature branch is merged. This is a distribution gate, not a code claim.
+
+### 5.7 Translations and accessibility
+
+- Phase 3 strings: 130 in `app/src/main/res/values/strings_phase3.xml`.
+- Non-English locales `ar`, `es`, `it`, `pt`, `pt-rBR`, and `ru` have no Phase 3 translations. No machine translations were fabricated.
+- `app/lint.xml` retains the `MissingTranslation` ignore scoped to `strings_phase3.xml` only; all other resources keep the check.
+- Accessibility source review found the labels/state descriptions/dialogs/errors listed in §3.7, plus two gaps: the problem-description field label is not explicitly associated, and `GlassChoiceChip` does not expose selected-state semantics.
+- No TalkBack or device accessibility pass was possible.
+
+### 5.8 Device QA
+
+`adb devices` returned no devices. No emulator, Android SDK, or `local.properties` is available. No device tests were executed, and no device results are claimed.
+
+A precise manual checklist for the OPPO A38 (Android 15) was added at `docs/HMXPDF_PHASE3_DEVICE_QA_CHECKLIST.md`. It covers the 20 requested behaviors plus accessibility and signed-upgrade checks, with reset commands, evidence capture, and redaction rules. The conditional remote-flag test is marked blocked until admin/config access exists.
 
 ---
 
@@ -323,58 +405,84 @@ The suites confirmed RLS with no policies, no client grants, service-role-only a
 | Requirement | Status | Notes |
 |---|---|---|
 | Work only on the feature branch; `main` untouched | **PASS** | `main`/`origin/main` unchanged |
-| Seven-page tour preserved; privacy after tour | **PASS (source/static)** | Device QA not run |
+| Seven-page tour preserved; privacy after tour | **PASS (source/static)** | Device QA blocked |
 | Privacy & Security, then Diagnostic Preferences, then Home/What's New | **PASS (source/static)** | Static tests in CI |
 | Both consent options default OFF | **PASS (source/static)** | |
 | Next saves exact selections; Not now saves both OFF | **PASS (source/static)** | |
 | Saved selection does not reappear on ordinary restarts | **PASS (source/static)** | |
+| Watch intro again does not re-enter privacy | **PASS (source/static)** | |
 | Exactly one informational Settings entry below Office engine | **PASS (source)** | No toggles in Settings |
 | No network from opening onboarding/Settings or changing consent | **PASS (source)** | No device network trace |
 | No automatic report submission or periodic uploader | **PASS (source/static)** | Explicit Send only |
+| Local consent wins over remote flags | **PASS (source/JVM)** | Device test conditional on admin access |
 | Approved self-checks only; problem description required | **PASS (source/static)** | |
-| Preview and explicit Send for both reports | **PASS (source/static)** | Live `report-submit` accepted both kinds; Android-to-staging end-to-end not run on a device |
+| Preview and explicit Send for both reports | **PASS (source/static)** | Live backend accepted both kinds; Android-to-staging end-to-end not run on a device |
+| Success shown only after server acknowledgement | **PASS (source/static)** | |
+| Failed reports stay pending with Retry/Discard | **PASS (source/static)** | |
+| Duplicate retries do not create duplicate reports | **PASS (live staging)** | `201` + `200 duplicate`, concurrent race |
 | Forbidden data never collected | **PASS (source/schema/static)** | |
-| Install UUID report-only, random, private/no-backup | **PASS (source/JVM tests)** | |
-| Config request contains only keys + installed version code | **PASS (Android source/JVM tests)** | Backend preserves backend-only `tester_token`; no app code sends it |
+| Install UUID report-only, random, private/no-backup | **PASS (source/JVM)** | |
+| Config request contains only keys + installed version code | **PASS (Android source/JVM)** | Backend preserves backend-only `tester_token`; no app code sends it |
 | Config fails closed on unavailable/invalid/stale/disabled flags | **PASS (JVM tests)** | |
 | Retention copy marks automatic deletion as not yet active | **PASS (source)** | Staging scheduler verified; copy remains conservative until production deployment |
-| Backend strict allowlist, idempotency, rate limits, RLS/grants, purge, rate-limit cleanup | **PASS (staging SQL/live)** | Security and retention suites plus live report/config probes pass |
+| Backend strict allowlist, idempotency, rate limits, RLS/grants, purge, rate-limit cleanup | **PASS (staging SQL/live)** | Security/retention suites plus live report/config probes pass |
 | Admin authorization, active allowlist, origin checks, audit | **BLOCKED (live)** | Source/Node tests pass; `admin-api` fails closed until `ADMIN_ORIGIN` is set |
-| Staging validation isolated from production | **PASS** | Disposable `hmxpdf-staging`; production project inspected read-only |
+| Privacy documentation for private distribution | **PASS** | `PRIVACY.md` updated; in-app link merge gate |
+| Reviewed translations | **BLOCKED** | No reviewed translations; scoped lint exception justified |
+| Accessibility review | **PASS (source)** | Device TalkBack blocked; two gaps documented |
+| Device QA | **BLOCKED** | No device/emulator/SDK; checklist added |
+| Staging validation isolated from production | **PASS** | Disposable `hmxpdf-staging`; production inspected read-only |
 | No production deployment, destructive tests, new signing identity, public release, or security weakening | **PASS** | Private CI artifacts only; staging only |
 
 ---
 
-## 7. Remaining work before deployment
+## 7. Remaining work before private distribution
 
-1. **Configure `ADMIN_ORIGIN` and finish admin live validation.** Set the secret through the Supabase dashboard or Management API (the exposed MCP tools have no secrets operation), then verify foreign-origin rejection, unauthenticated `401`, active-allowlist authorization, `reports.list/get/update/delete/purge`, and audit rows with a disposable staging admin user.
-2. **Deploy to production.** Not authorized in this task. Apply both migrations, deploy `report-submit`, `config`, and `admin-api`, set `ADMIN_ORIGIN`, install `pg_cron`, apply `supabase/retention/report_retention_cron.sql`, and confirm a successful production run before announcing automatic retention.
-3. **Update policy and store metadata.** Rewrite `PRIVACY.md` to disclose config requests, optional reports, the report-only install ID, access, retention, and deletion. Update Play Data Safety. The current policy still says there is no crash-reporting service.
-4. **Translate the Phase 3 strings.** Add reviewed translations to the six locales and remove the `MissingTranslation` ignore for `strings_phase3.xml`.
-5. **Device QA.** Verify the tour/privacy order, both completion paths, restart persistence, share/shortcut bypass, report success/failure/retry/discard, consent-OFF behavior, backup/restore exclusions, accessibility, and signed-release upgrade.
-6. **Admin frontend.** No admin UI exists in this repository. The Phase 4 Vercel panel remains separate.
-7. **Re-run Android CI after any Android change.** The current green run applies to the Android source at `cc8129d`; `24b2a90` changed only backend files and docs.
-8. **Update retention copy after production verification.** The app currently says automatic 30-day deletion is not yet active. Change that only after the production scheduler has a successful run and the boundary is re-verified there.
+1. **Configure `ADMIN_ORIGIN` and finish admin live validation.** This requires an actual admin frontend origin, a Supabase Dashboard session or Management API token with project secret access, and a disposable staging admin user/allowlist row. Set `ADMIN_ORIGIN` through the authorized dashboard/Management API path only; do not use a wildcard or invent an origin. Then test foreign-origin rejection, unauthenticated `401`, unauthorized `403`, active-admin authorization, `reports.list/get/update/delete/purge`, and audit rows. No admin frontend source exists in this repository.
+2. **Merge the privacy policy to `main` or repoint the in-app link.** The Settings link targets `main`; until the updated `PRIVACY.md` is merged, the APK will open the previous policy.
+3. **Translate the Phase 3 strings.** Add reviewed translations to the six locales and remove the `MissingTranslation` ignore for `strings_phase3.xml`. Do not use machine-translated privacy disclosures.
+4. **Run the device QA checklist.** Use `docs/HMXPDF_PHASE3_DEVICE_QA_CHECKLIST.md` on the OPPO A38 Android 15. Record actual results; do not claim device testing before it is run.
+5. **Production deployment (not authorized).** See §8.
+6. **Update the retention copy after production verification.** The app currently says automatic 30-day deletion is not yet active. Change that only after the production scheduler has a successful run and the boundary is re-verified there.
 
 ---
 
-## 8. Known limitations
+## 8. Production deployment checklist (not executed)
 
-- `DocsApp.needsPrivacyOnboarding` is read once for the session. After privacy completion it remains true until the next launch, suppressing recovery and star prompts for that session. This is not a privacy or data-loss issue; the prompts return on the next launch.
-- Fractional config rollout is unavailable to the app because no install ID is sent. 1–99% flags resolve OFF with `missing_install_id`. Tester/segment targeting remains backend-only.
-- The backend accepts the existing optional `tester_token`; the Android app never sends it.
-- There is no backend CI workflow. Local Node tests and syntax checks are the only automated backend validation.
-- The staging admin API cannot be exercised until `ADMIN_ORIGIN` is configured; live admin authorization and report actions are unverified.
-- Automatic 30-day deletion is verified on staging only. Production has no scheduler until the production runbook is executed.
+1. Merge the reviewed feature branch to `main`; do not force-push or rewrite `main`.
+2. Back up production data/configuration and confirm the current function versions for rollback.
+3. Apply migrations `hmx_feature_flags` and `hmx_reports` to production; confirm RLS, grants, constraints, and purge functions.
+4. Deploy the updated `config`, `report-submit`, and `admin-api` functions. Use `verify_jwt = true` for `admin-api`, matching `supabase/config.toml`; keep `report-submit`/`config` public as designed. Confirm the release build's Supabase URL, publishable key, config endpoint, and report endpoint point to production.
+5. Set `ADMIN_ORIGIN` to the actual admin frontend origin through the Supabase Dashboard or Management API. Do not use a wildcard. Create/verify the production admin allowlist and audit path.
+6. Install `pg_cron`, apply `supabase/retention/report_retention_cron.sql`, and confirm the job is active and a run succeeds.
+7. Verify live: config rejects `install_id`/unknown fields; report-submit returns `201` and duplicate `200`; admin rejects foreign origins, unauthenticated requests, and non-allowlisted users; authorized report actions work; audit rows are written; retention deletes an expired disposable row while keeping a newer one.
+8. Rollback considerations: restore the previous function versions; remove the cron job if retention must stop; disable report submission in the app by clearing the report endpoint/publishable key if the backend must be taken out of service; do not drop `hmx.reports` without a backup and explicit authorization.
+9. Update the in-app retention copy only after production retention is verified.
+10. Keep the private-distribution policy link current after merge.
+
+---
+
+## 9. Known limitations
+
+- Admin live authorization and report actions are unverified. No admin frontend exists in the repository, no admin origin is configured, and no admin user/allowlist row exists in staging.
+- The exposed MCP tool set has no secret-management operation; `npx supabase` has no login/token; no Dashboard session or Management API token is available in this environment.
+- Local Android Gradle checks cannot run: no Android SDK, no `local.properties`, no `key.properties`, and no release signing environment. CI remains the verified build.
+- No device or emulator is available; all device QA is pending.
+- Reviewed Phase 3 translations are unavailable; six locales fall back to English.
+- The problem-description field label association and choice-chip selected-state semantics remain accessibility gaps; no TalkBack pass was possible.
+- Automatic 30-day deletion is verified on staging only. Production has no scheduler, reports table, or purge function.
+- The updated privacy policy is on the feature branch; the in-app link points to `main` until merge.
+- Staging `admin-api` v1 was deployed with `verify_jwt = false`; production `admin-api` v1 is `verify_jwt = true` but predates the Phase 3 report actions. The function performs its own auth, but the production deployment must use `verify_jwt = true` with the new code.
+- There is no backend CI workflow. Local Node/Deno/TypeScript checks are the only automated backend validation.
 - The staging project is disposable validation infrastructure; it is not the app-configured backend.
 - The debug and release APKs have not been installed or exercised on a device or emulator.
-- New privacy/report strings are English-only pending reviewed translations.
-- `PRIVACY.md` is outdated and must not be published as-is.
 
 ---
 
-## 9. Conclusion
+## 10. Conclusion
 
-Phase 3 source is complete on the feature branch and Android CI is green, including JVM tests, lint, a debug APK, five signed release APKs, and a signed release bundle. Backend source is complete and its local Node suites pass. The backend is deployed and validated on an isolated staging project: both SQL suites pass, `report-submit` and `config` pass live validation, and the hourly `pg_cron` retention job has successful run history with observed 30-day deletion.
+Phase 3 source is complete on the feature branch. Android CI is green on `cc8129d` and the Android source is unchanged, so the existing debug APK, five signed release APKs, and signed release bundle remain the verified artifacts. Backend source passes 69 Node tests plus Deno and strict TypeScript checks. Staging was revalidated live: both SQL suites pass, `report-submit` v2 handles normal and concurrent duplicates correctly, `config` rejects identifiers and unknown fields, and the hourly retention scheduler has seven successful runs.
 
-Phase 3 is **not production-ready**. Admin report actions remain blocked on `ADMIN_ORIGIN`; production has not been deployed; the policy/store-metadata update, reviewed translations, and device QA remain open. No production system was modified.
+`PRIVACY.md` now describes the actual private-distribution behavior, including the limits of production retention. Admin report actions remain blocked on the missing admin origin/frontend and cannot be claimed as live-tested. Reviewed translations and device QA remain open. Production was not modified.
+
+**Phase 3 is not production-ready.** No production migration, deployment, secret, scheduler, data change, or signing change was made.

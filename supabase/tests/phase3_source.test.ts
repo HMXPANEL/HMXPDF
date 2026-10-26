@@ -47,6 +47,7 @@ test("report-submit is size-capped, rate-limited, idempotent, and never logs con
   assert.doesNotMatch(handler, /console\.log/);
   assert.doesNotMatch(handler, /document|file_name|file_path|raw_log/i);
 
+  assert.match(entry, /\.upsert\(record, \{/);
   assert.match(entry, /onConflict: "install_id,client_report_id"/);
   assert.match(entry, /ignoreDuplicates: true/);
   assert.doesNotMatch(entry, /console\.log/);

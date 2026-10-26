@@ -44,7 +44,7 @@ const store: ReportStore = {
   async insert(record: ReportRecord) {
     const { data, error } = await hmx
       .from("reports")
-      .insert(record, {
+      .upsert(record, {
         onConflict: "install_id,client_report_id",
         ignoreDuplicates: true,
       })

@@ -86,6 +86,27 @@ This is a host limitation, not an application requirement.
 The repository does not contain a Vercel project ID or token, so deployment
 must be performed by an account with access to the Vercel project.
 
+## Deployed staging Preview (recorded 2026-10-26)
+
+- Vercel account `ninjahattori53636-4371`, team `hmxpanels-projects`.
+- Project `hmxpdf-admin` (`prj_nBuaZngpmgToItrwNEJlAbdEE5F0`), Root Directory
+  `admin`, framework Vite.
+- Preview deployment `dpl_5V3xw4sJbgH2s6bQ3zyCvaCmPADP`, `target: null`
+  (Preview), READY.
+- Stable branch alias (use this exact origin for `ADMIN_ORIGIN`):
+  `https://hmxpdf-admin-git-feature-hmxpdf-diagn-95b12e-hmxpanels-projects.vercel.app`
+- Deployment URL:
+  `https://hmxpdf-admin-3nrctbvwt-hmxpanels-projects.vercel.app`
+- Vercel Authentication is enabled (`ssoProtection:
+  all_except_custom_domains`). An unauthenticated request returns `302` to
+  `https://vercel.com/sso-api`; no app HTML is served.
+- Preview-only, non-sensitive variables: `VITE_SUPABASE_URL`,
+  `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_ENVIRONMENT=staging`.
+- Vercel forces a new project's first deployment to production. The production
+  slot is a static, SSO-protected "Not available." placeholder
+  (`dpl_ZxQg7XZ6ckj9he9xa1VJEBgyzauC`), not the admin build. The admin app is
+  Preview-only.
+
 ## Configure `ADMIN_ORIGIN` (manual, required)
 
 The Supabase MCP connection exposes no secrets-management operation, so this
@@ -95,7 +116,8 @@ step must be done by the owner:
    (`jxeuwqmdxwqqvyhisrhg`).
 2. Go to **Project Settings → Edge Functions → Secrets** (or use the Management
    API secret endpoint with an authorized token).
-3. Add `ADMIN_ORIGIN` with the exact Preview origin from step 6 above.
+3. Add `ADMIN_ORIGIN` with this exact value:
+   `https://hmxpdf-admin-git-feature-hmxpdf-diagn-95b12e-hmxpanels-projects.vercel.app`
 4. Do not use `*`, a placeholder, a localhost origin, or a production origin.
 
 Secrets apply without redeploying the function. Then verify:

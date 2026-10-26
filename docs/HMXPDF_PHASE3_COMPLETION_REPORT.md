@@ -3,9 +3,9 @@
 - **Report date:** 2026-10-26
 - **Repository:** `HMXPANEL/HMXPDF`
 - **Branch:** `feature/hmxpdf-diagnostics-admin-updates`
-- **Code HEAD validated:** `24b2a902a40be7c3b3598669f9dd42112927d5d3`
+- **Code HEAD validated:** `24b2a902a40be7c3b3598669f9dd42112927d5d3` (source); report commit follows `d394143`
 - **`main` / `origin/main`:** `912e9977916c4f365147a294e60c3cd95d96960e` (unchanged)
-- **Status:** Phase 3 source is complete on the feature branch. Android CI, JVM tests, lint, debug APK, and signed release artifacts pass. Backend source and local Node tests pass. **Nothing was deployed.** SQL/database, Deno-runtime, scheduler, admin-live, device, policy, and translation gates remain open.
+- **Status:** Phase 3 source is complete on the feature branch. Android CI, JVM tests, lint, debug APK, and signed release artifacts pass. The backend was deployed to an isolated staging project and validated live: migrations, SQL security/retention suites, `report-submit`, `config`, and the hourly retention scheduler pass. **Production was not deployed.** Admin report actions remain **BLOCKED** on the `ADMIN_ORIGIN` secret, and policy, translations, and device QA remain open.
 
 ---
 
@@ -22,15 +22,16 @@
 | Backend source | **COMPLETE** | Commit `24b2a90` |
 | Backend Node tests | **PASS** | `node --test supabase/tests/*.test.ts` → 69 passed, 0 failed |
 | Backend syntax checks | **PASS** | `node --check` on 12 Supabase TypeScript files |
-| Backend CI | **NOT AVAILABLE** | No backend workflow exists; only `.github/workflows/android.yml` |
-| SQL security suite | **BLOCKED** | No `psql`, safe database, or staging project |
-| SQL retention suite | **BLOCKED** | Same environment blocker |
-| Deno runtime execution | **BLOCKED** | Deno unavailable; `node --check` is syntax-only |
-| Deployment | **NOT DONE** | No migration, function, secret, or scheduler was applied |
-| Automatic retention | **NOT PROVEN** | `pg_cron` absent; scheduler file not applied |
-| Admin live integration | **BLOCKED** | Deployed `admin-api` is v1 without report actions; no admin UI in this repository |
-| Privacy policy / store metadata | **PENDING** | `PRIVACY.md` is outdated and must be updated before distribution |
-| New-string translations | **PENDING** | English-first by plan; lint scoped to the Phase 3 strings only |
+| Backend CI | **NOT RUN** | No backend workflow exists; only `.github/workflows/android.yml` |
+| SQL security suite | **PASS** | Executed on staging `jxeuwqmdxwqqvyhisrhg`; explicit `reports_security_tests_passed` |
+| SQL retention suite | **PASS** | Executed on staging; explicit `reports_retention_tests_passed` |
+| Deno runtime execution | **PASS** | `report-submit` v1, `config` v1, and `admin-api` v1 deployed ACTIVE on staging; live probes below |
+| Staging deployment | **PASS** | Two migrations, three Edge Functions, and the retention scheduler applied to staging |
+| Automatic retention | **PASS (staging)** | `pg_cron` 1.6.4 job active; four successful runs; 30-day purge observed. Production **NOT RUN** |
+| Admin live integration | **BLOCKED** | `admin-api` fails closed with 503 because `ADMIN_ORIGIN` cannot be set via the exposed MCP tools |
+| Production deployment | **NOT RUN** | No production migration, function, secret, or scheduler change |
+| Privacy policy / store metadata | **NOT RUN** | `PRIVACY.md` is outdated and must be updated before distribution |
+| New-string translations | **NOT RUN** | English-first by plan; lint scoped to the Phase 3 strings only |
 | Device/emulator QA | **NOT RUN** | No Android SDK, emulator, or device in this environment |
 
 The release artifacts are **private CI artifacts only**. No GitHub release, tag, public upload, or production deployment was created. The existing release signing identity was reused; no new signing identity was created.
@@ -45,6 +46,7 @@ The release artifacts are **private CI artifacts only**. No GitHub release, tag,
 | `4f47bdf` | Make the report queue exception open for subclassing |
 | `cc8129d` | Scope missing-translation lint to Phase 3 strings |
 | `24b2a90` | Add Phase 3 reports backend, retention, and config privacy |
+| `d394143` | Document Phase 3 completion and open deployment gates |
 
 `origin/feature/hmxpdf-diagnostics-admin-updates` matches the local feature branch. `main` and `origin/main` remain at `912e9977916c4f365147a294e60c3cd95d96960e`. No force-push, rebase, merge, branch replacement, or `main` checkout occurred.
 
@@ -125,6 +127,8 @@ The only untracked files left in the working tree are the two pre-existing audit
 - `hmx.purge_expired_rate_limits(batch_size)` deleting at most 1–20,000 buckets older than 2 days, with a supporting index.
 - Default-OFF, 0% seeds for `diagnostics.enabled` and `problem_reports.enabled`.
 
+Applied to staging as migration `20261026013546 hmx_reports`; the transactional security and retention suites passed against it.
+
 ### 4.2 `report-submit`
 
 - Public `verify_jwt = false` endpoint; no service-role key in the app.
@@ -136,6 +140,8 @@ The only untracked files left in the working tree are the two pre-existing audit
 - Success returns only `report_id`, `status`, and `received_at`; `duplicate: true` is added for an existing row.
 - Rate-limiter errors fail closed with 503.
 
+Deployed to staging as `report-submit` v1 (`verify_jwt = false`) and exercised with live requests.
+
 ### 4.3 Admin API
 
 - `reports.list`, `reports.get`, `reports.update`, `reports.delete`, and `reports.purge` were added.
@@ -143,12 +149,16 @@ The only untracked files left in the working tree are the two pre-existing audit
 - List filters and limits are validated; update accepts only `status` and `admin_notes`; purge is fixed at 30 days and a bounded batch.
 - Audit records contain action metadata, not report content.
 
+Deployed to staging as `admin-api` v1 (`verify_jwt = false`). Live POST and OPTIONS requests currently return `503 admin_origin_not_configured`; `GET` returns `405 method_not_allowed`. This is the intended fail-closed behavior, but it prevents live admin authorization and report-action tests until `ADMIN_ORIGIN` is configured.
+
 ### 4.4 Config privacy
 
 - `config/request.ts` rejects `install_id` with `400 install_id_not_allowed` and rejects unknown top-level fields.
 - Flag evaluation always uses `installId: null`; fractional rollout therefore fails closed with `missing_install_id`.
 - The existing optional backend-only `tester_token` is preserved for tester/segment targeting, as the plan directs. No Android code sends it, and there is no tester enrollment UI in Phase 3.
 - `supabase/config.toml` registers `report-submit` with `verify_jwt = false`.
+
+Deployed to staging as `config` v1 (`verify_jwt = false`) and exercised with live requests.
 
 ### 4.5 Retention scheduler
 
@@ -159,7 +169,7 @@ The only untracked files left in the working tree are the two pre-existing audit
 - Schedules an hourly run at minute 17.
 - Includes verification queries for `cron.job`, `cron.job_run_details`, and expired-row counts.
 
-The file was not applied. `pg_cron` is absent in the only available Supabase project.
+Applied to staging after installing `pg_cron` 1.6.4 (`cron.database_name = postgres`, `cron.timezone = GMT`). Job `hmx-purge-expired-reports` (jobid 1) is active at `17 * * * *`; four runs succeeded in `cron.job_run_details`. It has **not** been applied to production.
 
 ---
 
@@ -216,7 +226,7 @@ Additional static checks:
 
 ### 5.4 Read-only deployment check
 
-The only available Supabase project (`tchoqlaqgcrbbvomaebo`) was inspected read-only:
+The pre-existing app-configured project (`tchoqlaqgcrbbvomaebo`) was inspected read-only and left unchanged:
 
 | Check | Result |
 |---|---|
@@ -230,6 +240,79 @@ The only available Supabase project (`tchoqlaqgcrbbvomaebo`) was inspected read-
 | Deployed `admin-api` | **version 1**; no `reports.list` or `reports.purge` |
 
 No production SQL writes, migrations, deployments, or live probes were performed.
+
+### 5.5 Staging deployment and live validation
+
+An isolated free-plan project `hmxpdf-staging` (`jxeuwqmdxwqqvyhisrhg`, region `ap-northeast-2`, status `ACTIVE_HEALTHY`) was created for this validation. It is separate from the app-configured project `tchoqlaqgcrbbvomaebo`; no production data or configuration was touched.
+
+**Migrations applied**
+
+| Version | Name | Notes |
+|---|---|---|
+| `20261026013533` | `hmx_feature_flags` | Phase 2 base schema |
+| `20261026013546` | `hmx_reports` | Phase 3 reports schema, purge functions, flag seeds |
+| `20261026014711` | `enable_pg_cron_staging` | Staging-only `create extension pg_cron`; not a repository migration |
+
+**Edge Functions deployed**
+
+| Function | Version | `verify_jwt` | Result |
+|---|---|---|---|
+| `report-submit` | 1 | `false` | ACTIVE; live probes pass |
+| `config` | 1 | `false` | ACTIVE; live probes pass |
+| `admin-api` | 1 | `false` | ACTIVE; fails closed pending `ADMIN_ORIGIN` |
+
+**SQL suites (transactional, rolled back)**
+
+| Suite | Result |
+|---|---|
+| `supabase/tests/reports_security.sql` | **PASS** — explicit `reports_security_tests_passed` |
+| `supabase/tests/reports_retention.sql` | **PASS** — explicit `reports_retention_tests_passed` |
+
+The suites confirmed RLS with no policies, no client grants, service-role-only access, all kind/field/size constraints, idempotency identity, strict `< 30 days` retention, batch clamping (1–5,000), audit-row survival, 2-day rate-limit cleanup, and service-role-only purge functions.
+
+**Live `report-submit` probes**
+
+| Probe | Result |
+|---|---|
+| Valid diagnostic | `201` with `report_id`, `status`, `received_at` |
+| Duplicate diagnostic | `200` with `duplicate: true` |
+| Valid problem | `201` |
+| Unknown field (`device_model`) | `400 unknown_field` |
+| Invalid kind | `400 invalid_kind` |
+| Oversized body | `413 body_too_large` |
+| Install rate limit (5/hour) | `429 rate_limited`, `retry-after: 3600` |
+| IP rate limit (10/hour) | `429 rate_limited` after the limit |
+
+**Live `config` probes**
+
+| Probe | Result |
+|---|---|
+| Valid request | `200`; both flags OFF; `max_age_seconds: 60` |
+| `install_id` present | `400 install_id_not_allowed` |
+| Unknown field | `400 unknown_field` |
+| Invalid flag keys | `400 invalid_keys` |
+| Malformed tester token | `400 invalid_tester_token` |
+| Valid-format unenrolled token | `200`; flags OFF |
+| Oversized body | `413` |
+| `GET` / `OPTIONS` | `405` / `204` |
+| Global kill switch, flag kill switch, disabled, 0%, 100%, 50% without install ID, version mismatch, not-started, expired, unknown flag | Fail closed as designed (`disabled`, `rollout`, `missing_install_id`, `version_mismatch`, `not_started`, `expired`, absent) |
+| Tester grant / segment grant / disabled overrides tester | Enabled via `tester` / `segment`; disabled wins |
+
+**Retention scheduler**
+
+- `pg_cron` 1.6.4 installed; `cron.database_name = postgres`, `cron.timezone = GMT`.
+- `supabase/retention/report_retention_cron.sql` applied with SQL execution, not as a repository migration.
+- Job `hmx-purge-expired-reports` (jobid 1) is active at `17 * * * *`, owner `postgres`, database `postgres`.
+- Temporarily changed to `* * * * *` to obtain scheduler run history, then restored to `17 * * * *`.
+- `cron.job_run_details`: runids 1–4, all `succeeded`.
+- Disposable rows: a 31-day-old and a 30-day-plus-1-hour report were deleted; 29-day-23-hour and fresh reports were kept. A 3-day-old rate-limit bucket was deleted; a fresh bucket was kept.
+- The exact 30-day boundary is strict (`<`) and was covered by the SQL retention suite. All test rows were removed afterward; staging currently has 0 reports and 0 rate-limit buckets.
+
+**Admin API**
+
+- Deployment succeeded, but live POST and OPTIONS requests return `503 admin_origin_not_configured`; `GET` returns `405 method_not_allowed`. Function logs show `admin-api: ADMIN_ORIGIN is not configured`.
+- The exposed MCP tool set has no secrets-management operation, so `ADMIN_ORIGIN` cannot be set from this environment. This is an environment/credential blocker, not a source defect.
+- No admin JWT, allowlist row, or report action was exercised live. Admin report actions remain covered only by local Node tests.
 
 ---
 
@@ -247,27 +330,29 @@ No production SQL writes, migrations, deployments, or live probes were performed
 | No network from opening onboarding/Settings or changing consent | **PASS (source)** | No device network trace |
 | No automatic report submission or periodic uploader | **PASS (source/static)** | Explicit Send only |
 | Approved self-checks only; problem description required | **PASS (source/static)** | |
-| Preview and explicit Send for both reports | **PASS (source/static)** | Live server send not tested |
+| Preview and explicit Send for both reports | **PASS (source/static)** | Live `report-submit` accepted both kinds; Android-to-staging end-to-end not run on a device |
 | Forbidden data never collected | **PASS (source/schema/static)** | |
 | Install UUID report-only, random, private/no-backup | **PASS (source/JVM tests)** | |
 | Config request contains only keys + installed version code | **PASS (Android source/JVM tests)** | Backend preserves backend-only `tester_token`; no app code sends it |
 | Config fails closed on unavailable/invalid/stale/disabled flags | **PASS (JVM tests)** | |
-| Retention copy marks automatic deletion as not yet active | **PASS (source)** | Copy does not claim verified 30-day deletion |
-| Backend strict allowlist, idempotency, rate limits, RLS/grants, admin auth, audit, purge, rate-limit cleanup | **PASS (source/Node tests)** | SQL/live enforcement unrun |
-| No production deployment, destructive tests, new signing identity, public release, or security weakening | **PASS** | Private CI artifacts only |
+| Retention copy marks automatic deletion as not yet active | **PASS (source)** | Staging scheduler verified; copy remains conservative until production deployment |
+| Backend strict allowlist, idempotency, rate limits, RLS/grants, purge, rate-limit cleanup | **PASS (staging SQL/live)** | Security and retention suites plus live report/config probes pass |
+| Admin authorization, active allowlist, origin checks, audit | **BLOCKED (live)** | Source/Node tests pass; `admin-api` fails closed until `ADMIN_ORIGIN` is set |
+| Staging validation isolated from production | **PASS** | Disposable `hmxpdf-staging`; production project inspected read-only |
+| No production deployment, destructive tests, new signing identity, public release, or security weakening | **PASS** | Private CI artifacts only; staging only |
 
 ---
 
 ## 7. Remaining work before deployment
 
-1. **Safe database validation.** Provide a staging project and `psql`/Supabase CLI. Apply the migration, then run `supabase/tests/reports_security.sql` and `supabase/tests/reports_retention.sql`. Both must pass.
-2. **Deploy backend functions to staging.** Deploy `report-submit`, the updated `config`, and the updated `admin-api`; set `ADMIN_ORIGIN`; run live validation, size-cap, rate-limit, idempotency, origin, and auth probes.
-3. **Prove retention.** Enable `pg_cron`, run `supabase/retention/report_retention_cron.sql`, confirm the job is active and `cron.job_run_details` shows a successful run, and verify a 31-day-old row is deleted while a fresh row is kept. Only then may the copy assert automatic 30-day deletion.
-4. **Update policy and store metadata.** Rewrite `PRIVACY.md` to disclose config requests, optional reports, the report-only install ID, access, retention, and deletion. Update Play Data Safety. The current policy still says there is no crash-reporting service.
-5. **Translate the Phase 3 strings.** Add reviewed translations to the six locales and remove the `MissingTranslation` ignore for `strings_phase3.xml`.
-6. **Device QA.** Verify the tour/privacy order, both completion paths, restart persistence, share/shortcut bypass, report success/failure/retry/discard, consent-OFF behavior, backup/restore exclusions, accessibility, and signed-release upgrade.
-7. **Admin frontend.** No admin UI exists in this repository. The Phase 4 Vercel panel remains separate.
-8. **Re-run Android CI after any Android change.** The current green run applies to the Android source at `cc8129d`; `24b2a90` changed only backend files and docs.
+1. **Configure `ADMIN_ORIGIN` and finish admin live validation.** Set the secret through the Supabase dashboard or Management API (the exposed MCP tools have no secrets operation), then verify foreign-origin rejection, unauthenticated `401`, active-allowlist authorization, `reports.list/get/update/delete/purge`, and audit rows with a disposable staging admin user.
+2. **Deploy to production.** Not authorized in this task. Apply both migrations, deploy `report-submit`, `config`, and `admin-api`, set `ADMIN_ORIGIN`, install `pg_cron`, apply `supabase/retention/report_retention_cron.sql`, and confirm a successful production run before announcing automatic retention.
+3. **Update policy and store metadata.** Rewrite `PRIVACY.md` to disclose config requests, optional reports, the report-only install ID, access, retention, and deletion. Update Play Data Safety. The current policy still says there is no crash-reporting service.
+4. **Translate the Phase 3 strings.** Add reviewed translations to the six locales and remove the `MissingTranslation` ignore for `strings_phase3.xml`.
+5. **Device QA.** Verify the tour/privacy order, both completion paths, restart persistence, share/shortcut bypass, report success/failure/retry/discard, consent-OFF behavior, backup/restore exclusions, accessibility, and signed-release upgrade.
+6. **Admin frontend.** No admin UI exists in this repository. The Phase 4 Vercel panel remains separate.
+7. **Re-run Android CI after any Android change.** The current green run applies to the Android source at `cc8129d`; `24b2a90` changed only backend files and docs.
+8. **Update retention copy after production verification.** The app currently says automatic 30-day deletion is not yet active. Change that only after the production scheduler has a successful run and the boundary is re-verified there.
 
 ---
 
@@ -277,7 +362,9 @@ No production SQL writes, migrations, deployments, or live probes were performed
 - Fractional config rollout is unavailable to the app because no install ID is sent. 1–99% flags resolve OFF with `missing_install_id`. Tester/segment targeting remains backend-only.
 - The backend accepts the existing optional `tester_token`; the Android app never sends it.
 - There is no backend CI workflow. Local Node tests and syntax checks are the only automated backend validation.
-- The SQL suites, Deno runtime, Edge Functions, scheduler, and admin actions have not been executed against a database or deployment.
+- The staging admin API cannot be exercised until `ADMIN_ORIGIN` is configured; live admin authorization and report actions are unverified.
+- Automatic 30-day deletion is verified on staging only. Production has no scheduler until the production runbook is executed.
+- The staging project is disposable validation infrastructure; it is not the app-configured backend.
 - The debug and release APKs have not been installed or exercised on a device or emulator.
 - New privacy/report strings are English-only pending reviewed translations.
 - `PRIVACY.md` is outdated and must not be published as-is.
@@ -286,6 +373,6 @@ No production SQL writes, migrations, deployments, or live probes were performed
 
 ## 9. Conclusion
 
-Phase 3 source is complete on the feature branch and Android CI is green, including JVM tests, lint, a debug APK, five signed release APKs, and a signed release bundle. Backend source is complete and its local Node suites pass.
+Phase 3 source is complete on the feature branch and Android CI is green, including JVM tests, lint, a debug APK, five signed release APKs, and a signed release bundle. Backend source is complete and its local Node suites pass. The backend is deployed and validated on an isolated staging project: both SQL suites pass, `report-submit` and `config` pass live validation, and the hourly `pg_cron` retention job has successful run history with observed 30-day deletion.
 
-Phase 3 is **not deployed and not production-ready**. The remaining hard blockers are the SQL/security suites, Deno/live function validation, a verified automatic 30-day purge, the policy/store-metadata update, reviewed translations, and device QA. No production system was modified.
+Phase 3 is **not production-ready**. Admin report actions remain blocked on `ADMIN_ORIGIN`; production has not been deployed; the policy/store-metadata update, reviewed translations, and device QA remain open. No production system was modified.

@@ -75,6 +75,18 @@ class DocxEditorViewModel : ViewModel() {
     val dirty: Boolean get() = doc != null && doc !== saved
     val editable: Boolean get() = pkg?.writable == true && meta.fileUri?.scheme == "file"
 
+    /**
+     * The editor's single mode flag. Reading mode is the default; picture commands check it here,
+     * not only in the UI, so no toolbar, gesture, or alternate caller can mutate in reading mode.
+     */
+    var editMode by mutableStateOf(false)
+        private set
+
+    fun setEditMode(on: Boolean) {
+        if (editMode == on) return
+        editMode = on
+    }
+
     private var started = false
     /** The page last read in this document (from Recents), to reopen at. */
     var resumePage = 0
@@ -119,6 +131,7 @@ class DocxEditorViewModel : ViewModel() {
             pkg = parsed.first
             doc = parsed.second
             imageClip = null
+            editMode = false
             saved = parsed.second
             original = parsed.second
             meta = Meta(fileName = name, fileUri = local, sourceUri = uri, isLoading = false)
@@ -258,10 +271,14 @@ class DocxEditorViewModel : ViewModel() {
 
     /** True while the copied picture's relationship still exists in this package. */
     val canPasteImage: Boolean
-        get() = imageClip?.let { pkg?.image(it.rid) != null } == true
+        get() = editMode && imageClip?.let { pkg?.image(it.rid) != null } == true
+
+    private fun canEditImages(): Boolean = DocxImageEdits.canEditImages(editMode, pkg?.writable == true)
 
     fun copyImage(id: Long, run: Int): Boolean {
+        if (!canEditImages()) return false
         val p = doc?.let { findPara(it.blocks, id) } ?: return false
+        if (!p.editable) return false
         val f = DocxImageEdits.imageRun(p, run) ?: return false
         val rid = f.obj?.let { DocxObjects.info(it).imageRid } ?: return false
         if (pkg?.image(rid) == null) return false
@@ -271,6 +288,7 @@ class DocxEditorViewModel : ViewModel() {
 
     /** Removes a picture and returns the index where its run used to be (a paste point). */
     fun deleteImage(id: Long, run: Int): Int? {
+        if (!canEditImages()) return null
         val d = doc ?: return null
         val p = findPara(d.blocks, id) ?: return null
         if (!p.editable) return null
@@ -283,12 +301,14 @@ class DocxEditorViewModel : ViewModel() {
 
     /** Copies first; only a successful copy removes the original. */
     fun cutImage(id: Long, run: Int): Int? {
+        if (!canEditImages()) return null
         if (!copyImage(id, run)) return null
         return deleteImage(id, run)
     }
 
     /** Inserts the copied picture at [at] in paragraph [id]; returns the new run's index. */
     fun pasteImage(id: Long, at: Int): Int? {
+        if (!canEditImages()) return null
         val clip = imageClip ?: return null
         val packageNow = pkg ?: return null
         if (packageNow.image(clip.rid) == null) return null
@@ -312,6 +332,7 @@ class DocxEditorViewModel : ViewModel() {
         maxWidthPt: Float,
         maxHeightPt: Float = 2000f
     ): Boolean {
+        if (!canEditImages()) return false
         val d = doc ?: return false
         val p = findPara(d.blocks, id) ?: return false
         if (!p.editable) return false

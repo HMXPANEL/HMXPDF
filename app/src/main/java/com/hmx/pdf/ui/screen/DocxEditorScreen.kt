@@ -30,7 +30,6 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.calculateZoom
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.horizontalScroll
@@ -121,6 +120,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -146,6 +146,8 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -183,6 +185,7 @@ import com.hmx.pdf.docx.DocRow
 import com.hmx.pdf.docx.DocTable
 import com.hmx.pdf.docx.DocxEdits
 import com.hmx.pdf.docx.DocxImageEdits
+import com.hmx.pdf.docx.DocxImageResize
 import com.hmx.pdf.docx.DocxObjects
 import com.hmx.pdf.docx.DocxPackage
 import com.hmx.pdf.docx.DocxStyles
@@ -397,20 +400,15 @@ private class DocEnv(
     val accent: Color,
     /** Width between the page margins. */
     val textWidth: Dp,
+    /** Height between the page margins. */
+    val textHeight: Dp,
     val onChange: (DocPara, TextFieldValue) -> Unit,
     val onFocused: (DocPara) -> Unit,
     val onBlurred: (DocPara) -> Unit,
     val onFocusConsumed: () -> Unit,
     val onReadOnlyTap: () -> Unit,
     val selectedImage: ImageKey?,
-    val canPasteImage: Boolean,
     val onImageTap: (Long, Int) -> Unit,
-    val onImageCut: (Long, Int) -> Unit,
-    val onImageCopy: (Long, Int) -> Unit,
-    val onImageDelete: (Long, Int) -> Unit,
-    /** Insert after the picture run at this index. */
-    val onImagePaste: (Long, Int) -> Unit,
-    val onImageSize: (Long, Int, Float) -> Unit,
     val onImageResize: (Long, Int, Float, Float) -> Unit
 )
 
@@ -485,7 +483,7 @@ private fun DocxEditorContent(
     val pageTextHeightPt = pkg?.let { (it.page.height - it.page.top - it.page.bottom) / 20f }?.coerceAtLeast(24f) ?: 2000f
     val editable = viewModel.editable
 
-    var editMode by rememberSaveable { mutableStateOf(false) }
+    val editMode = viewModel.editMode
     /** The paragraph field that has focus; Enter is swallowed while none has (see the root Box). */
     var focusedField by remember { mutableStateOf<Long?>(null) }
     // 1 = the page fits the screen's width, as a desktop shows a whole page.
@@ -521,6 +519,8 @@ private fun DocxEditorContent(
     val carlito = remember { DocxLook.carlito() }
     // Paragraph properties only (indents, lists, styles): independent of size and colour.
     val propsLook = remember(pkg) { pkg?.let { DocxLook(it, false, 1f, 1f, carlito) } }
+    // Chrome colours for the picture toolbar, which floats above the page rather than in it.
+    val toolbarLook = remember(pkg, paperDark) { pkg?.let { DocxLook(it, paperDark, 1f, 1f, carlito) } }
     val flat = remember(doc, pkg, editMode) { if (doc != null && pkg != null) flatten(doc.blocks, pkg.styles, !editMode) else null }
     val labels = remember(doc, pkg) { if (doc != null && pkg != null) numberingLabels(pkg, doc.blocks) else emptyMap() }
 
@@ -728,13 +728,37 @@ private fun DocxEditorContent(
         }
     }
 
+    fun enterEdit() {
+        viewModel.setEditMode(true)
+        selectedImage = null
+        insertionPoint = null
+        showImageSize = false
+        imageSizeTarget = null
+        showSearch = false
+        searchQuery = ""
+        focusManager.clearFocus()
+    }
+
     fun exitEdit() {
         focusManager.clearFocus()
         activeId = null
         pending = null
         panel = DocPanel.NONE
         selectedImage = null
-        editMode = false
+        insertionPoint = null
+        showImageSize = false
+        imageSizeTarget = null
+        viewModel.setEditMode(false)
+    }
+
+    // Any mode change (Done, back, a reloaded document) must drop picture-only state.
+    LaunchedEffect(editMode) {
+        if (!editMode) {
+            selectedImage = null
+            insertionPoint = null
+            showImageSize = false
+            imageSizeTarget = null
+        }
     }
 
     // ── images ─────────────────────────────────────────────────────────────────
@@ -742,9 +766,14 @@ private fun DocxEditorContent(
     fun ptText(v: Float): String =
         String.format(java.util.Locale.US, "%.1f", v).trimEnd('0').trimEnd('.')
 
+    fun imageFailed() {
+        Toast.makeText(context, R.string.docx_image_action_failed, Toast.LENGTH_SHORT).show()
+    }
+
     fun selectImage(id: Long, run: Int) {
+        if (!editMode) return
         val p = viewModel.para(id) ?: return
-        if (!p.editable || pkg?.writable != true) return
+        if (!DocxImageEdits.canEditImages(editMode, pkg?.writable == true) || !p.editable) return
         val key = ImageKey(id, run)
         selectedImage = if (selectedImage == key) null else key
         insertionPoint = id to (run + 1).coerceIn(0, p.text.length)
@@ -752,38 +781,44 @@ private fun DocxEditorContent(
     }
 
     fun copyImage(id: Long, run: Int) {
-        viewModel.copyImage(id, run)
+        if (!editMode) return
+        if (!viewModel.copyImage(id, run)) imageFailed()
     }
 
     fun cutImage(id: Long, run: Int) {
-        val at = viewModel.cutImage(id, run) ?: return
+        if (!editMode) return
+        val at = viewModel.cutImage(id, run) ?: return imageFailed()
         selectedImage = null
         insertionPoint = id to at
         focusManager.clearFocus()
     }
 
     fun deleteImage(id: Long, run: Int) {
-        val at = viewModel.deleteImage(id, run) ?: return
+        if (!editMode) return
+        val at = viewModel.deleteImage(id, run) ?: return imageFailed()
         selectedImage = null
         insertionPoint = id to at
         focusManager.clearFocus()
     }
 
     fun pasteImage(id: Long, at: Int) {
-        val run = viewModel.pasteImage(id, at) ?: return
+        if (!editMode) return
+        val run = viewModel.pasteImage(id, at) ?: return imageFailed()
         selectedImage = ImageKey(id, run)
         insertionPoint = id to (run + 1)
         focusManager.clearFocus()
     }
 
     fun pasteAtInsertion() {
+        if (!editMode) return
         val (id, at) = insertionPoint ?: return
         pasteImage(id, at)
     }
 
     fun openImageSize(id: Long, run: Int, maxWidthPt: Float) {
-        val p = viewModel.para(id) ?: return
-        val size = DocxImageEdits.size(p, run) ?: return
+        if (!editMode) return
+        val p = viewModel.para(id) ?: return imageFailed()
+        val size = DocxImageEdits.size(p, run) ?: return imageFailed()
         imageSizeTarget = ImageKey(id, run)
         imageSizeWidth = ptText(size.first)
         imageSizeHeight = ptText(size.second)
@@ -794,13 +829,14 @@ private fun DocxEditorContent(
     }
 
     fun applyImageSize() {
+        if (!editMode) return
         val target = imageSizeTarget ?: return
-        val w = imageSizeWidth.toFloatOrNull() ?: return
-        val h = imageSizeHeight.toFloatOrNull() ?: return
-        if (w <= 0f || h <= 0f) return
+        val w = imageSizeWidth.toFloatOrNull() ?: return imageFailed()
+        val h = imageSizeHeight.toFloatOrNull() ?: return imageFailed()
+        if (w <= 0f || h <= 0f) return imageFailed()
         if (viewModel.resizeImage(target.paraId, target.run, w, h, imageSizeMaxWidth, pageTextHeightPt)) {
             showImageSize = false
-        }
+        } else imageFailed()
     }
 
     // ── formatting ─────────────────────────────────────────────────────────────
@@ -988,7 +1024,7 @@ private fun DocxEditorContent(
                     }
                     if (editable && doc != null) {
                         LiquidIconButton(
-                            onClick = { if (editMode) exitEdit() else { editMode = true; showSearch = false; searchQuery = "" } },
+                            onClick = { if (editMode) exitEdit() else enterEdit() },
                             backdrop = headerBackdrop,
                             modifier = editInk.modifier,
                             surfaceColor = if (editMode) accent.copy(0.22f) else Color.Unspecified
@@ -1065,6 +1101,7 @@ private fun DocxEditorContent(
                     val marginR = tw(page.right)
                     val marginT = tw(page.top)
                     val marginB = tw(page.bottom)
+                    val textHeight = ((page.height - page.top - page.bottom).coerceAtLeast(0) / 20f * dpPerPt).dp
                     val env = DocEnv(
                         pkg = pkg,
                         editMode = editMode,
@@ -1076,6 +1113,7 @@ private fun DocxEditorContent(
                         currentHit = matches.getOrNull(currentMatch),
                         accent = accent,
                         textWidth = pageW - marginL - marginR,
+                        textHeight = textHeight,
                         onChange = ::onChange,
                         onFocused = ::onFocused,
                         onBlurred = { p -> if (focusedField == p.id) focusedField = null },
@@ -1087,14 +1125,10 @@ private fun DocxEditorContent(
                             }
                         },
                         selectedImage = selectedImage,
-                        canPasteImage = viewModel.canPasteImage,
                         onImageTap = ::selectImage,
-                        onImageCut = ::cutImage,
-                        onImageCopy = ::copyImage,
-                        onImageDelete = ::deleteImage,
-                        onImagePaste = { id, run -> pasteImage(id, run + 1) },
-                        onImageSize = ::openImageSize,
-                        onImageResize = { id, run, w, h -> viewModel.resizeImage(id, run, w, h, pageTextWidthPt, pageTextHeightPt) }
+                        onImageResize = { id, run, w, h ->
+                            if (!viewModel.resizeImage(id, run, w, h, pageTextWidthPt, pageTextHeightPt)) imageFailed()
+                        }
                     )
                     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
                     val topRound = RoundedCornerShape(topStart = PaperCorner, topEnd = PaperCorner)
@@ -1143,8 +1177,14 @@ private fun DocxEditorContent(
 
         // ── edit-mode chrome: formatting bar on top, tool dock above the keyboard ──
         if (pkg != null && styles != null) {
+            val sel = selectedImage
+            val selPara = sel?.let { viewModel.para(it.paraId) }
+            val selSize = if (sel != null && selPara != null && DocxImageEdits.isImage(selPara, sel.run)) {
+                DocxImageEdits.size(selPara, sel.run)
+            } else null
+            val showImageBar = editMode && sel != null && selSize != null
             AnimatedVisibility(
-                visible = editMode,
+                visible = editMode && !showImageBar,
                 enter = fadeIn(GlassMotion.fade()),
                 exit = fadeOut(GlassMotion.fade()),
                 modifier = Modifier.align(Alignment.TopCenter).padding(top = statusTop + 48.dp + 10.dp)
@@ -1166,6 +1206,32 @@ private fun DocxEditorContent(
                     onSize = { hp -> applyChar { _, fmt -> DocxEdits.withSize(fmt, hp) } },
                     modifier = Modifier.height(ribbonHeight)
                 )
+            }
+            // One contextual toolbar, in the same top slot as the text ribbon: it is always on
+            // screen, scrolls with neither the page nor the keyboard, and never duplicates itself.
+            AnimatedVisibility(
+                visible = showImageBar,
+                enter = fadeIn(GlassMotion.fade()),
+                exit = fadeOut(GlassMotion.fade()),
+                modifier = Modifier.align(Alignment.TopCenter)
+                    .padding(start = 12.dp, end = 12.dp, top = statusTop + 48.dp + 10.dp)
+            ) {
+                val target = sel
+                val look = toolbarLook
+                if (target != null && look != null) {
+                    ImageToolbar(
+                        look = look,
+                        accent = accent,
+                        canPaste = viewModel.canPasteImage,
+                        canResize = selSize != null,
+                        onCut = { cutImage(target.paraId, target.run) },
+                        onCopy = { copyImage(target.paraId, target.run) },
+                        onPaste = { pasteImage(target.paraId, target.run + 1) },
+                        onDelete = { deleteImage(target.paraId, target.run) },
+                        onSize = { openImageSize(target.paraId, target.run, pageTextWidthPt) },
+                        modifier = Modifier.height(ribbonHeight)
+                    )
+                }
             }
             AnimatedVisibility(
                 visible = editMode,
@@ -1302,7 +1368,7 @@ private fun DocxEditorContent(
 
         // The copied picture's paste point: shown while a picture is on the image clipboard.
         AnimatedVisibility(
-            visible = viewModel.canPasteImage && insertionPoint != null && selectedImage == null && pkg?.writable == true,
+            visible = editMode && viewModel.canPasteImage && insertionPoint != null && selectedImage == null && pkg?.writable == true,
             enter = fadeIn(GlassMotion.fade()) + slideInVertically { it },
             exit = fadeOut(GlassMotion.fade()) + slideOutVertically { it },
             modifier = Modifier
@@ -1419,7 +1485,7 @@ private fun DocxEditorContent(
 
         // Exact picture size, for when dragging a corner is not precise enough.
         GlassDialog(
-            visible = showImageSize,
+            visible = showImageSize && editMode,
             onDismiss = { showImageSize = false },
             backdrop = screenBackdrop.glass,
             title = stringResource(R.string.docx_image_size),
@@ -1620,7 +1686,8 @@ private fun ParagraphBlock(
     cell: RProps? = null,
     /** The part of the paragraph shown here, when Word broke it across pages (reading only). */
     range: IntRange? = null,
-    maxWidth: Dp = env.textWidth
+    maxWidth: Dp = env.textWidth,
+    maxHeight: Dp = env.textHeight
 ) {
     val pl = remember(para.pPr, look, cell) { look.para(para, cell) }
     val editable = env.editMode && !readOnly && para.editable && range == null
@@ -1669,16 +1736,12 @@ private fun ParagraphBlock(
                     pkg = env.pkg,
                     look = look,
                     maxWidth = maxWidth - pl.padStart - pl.padEnd,
+                    maxHeight = maxHeight,
                     align = align,
                     selected = env.selectedImage == ImageKey(para.id, run),
-                    canEdit = !readOnly && para.editable && range == null && env.pkg.writable,
-                    canPaste = env.canPasteImage,
+                    canEdit = DocxImageEdits.canEditImages(env.editMode, env.pkg.writable) &&
+                        !readOnly && para.editable && range == null,
                     onSelect = env.onImageTap,
-                    onCut = env.onImageCut,
-                    onCopy = env.onImageCopy,
-                    onDelete = env.onImageDelete,
-                    onPaste = env.onImagePaste,
-                    onSize = env.onImageSize,
                     onResize = env.onImageResize
                 )
             }
@@ -1821,27 +1884,29 @@ private fun DocPicture(
     pkg: DocxPackage,
     look: DocxLook,
     maxWidth: Dp,
+    maxHeight: Dp,
     align: Alignment.Horizontal,
     selected: Boolean,
     canEdit: Boolean,
-    canPaste: Boolean,
     onSelect: (Long, Int) -> Unit,
-    onCut: (Long, Int) -> Unit,
-    onCopy: (Long, Int) -> Unit,
-    onDelete: (Long, Int) -> Unit,
-    onPaste: (Long, Int) -> Unit,
-    onSize: (Long, Int, Float) -> Unit,
     onResize: (Long, Int, Float, Float) -> Unit
 ) {
     val rid = info.imageRid ?: return
     val bytes = remember(pkg, rid) { pkg.image(rid) }
-    val maxW = maxWidth.coerceAtLeast(24.dp)
+    val ratio = if (info.widthPt > 0f && info.heightPt > 0f) info.heightPt / info.widthPt else 0.6f
+    val safeRatio = ratio.coerceIn(0.05f, 20f)
+    val widthCap = maxWidth.coerceAtLeast(12.dp)
+    val heightCap = maxHeight.coerceAtLeast(12.dp)
+    // A tall picture may be wider than the text column yet still taller than the page: cap both.
+    val maxW = widthCap.coerceAtMost(heightCap / safeRatio).coerceAtLeast(12.dp)
     val want = if (info.widthPt > 0f) (info.widthPt * look.scale).dp else maxW
     val w = want.coerceAtMost(maxW).coerceAtLeast(12.dp)
+    val startHeight = w * safeRatio
     // The preview follows the finger locally; the document is committed once, on release.
     var dragWidth by remember { mutableStateOf<Dp?>(null) }
+    var dragCorner by remember { mutableStateOf<DocxImageResize.Corner?>(null) }
     val shown = dragWidth ?: w
-    val px = with(LocalDensity.current) { w.roundToPx() }
+    val px = with(LocalDensity.current) { shown.roundToPx() }
     val bucket = (px / 128 + 1) * 128
     val pic by produceState<DecodedPicture?>(null, bytes, bucket) {
         val b = bytes ?: return@produceState
@@ -1851,15 +1916,43 @@ private fun DocPicture(
                 .getOrNull()
         }
     }
-    val ratio = if (info.widthPt > 0f && info.heightPt > 0f) info.heightPt / info.widthPt
-    else pic?.image?.let { it.height.toFloat() / it.width.coerceAtLeast(1) } ?: 0.6f
-    val safeRatio = ratio.coerceIn(0.05f, 20f)
     val accent = LiquidGlassColors.Blue
     val label = stringResource(R.string.docx_image)
     val canResize = canEdit && info.widthPt > 0f && info.heightPt > 0f
-    Column(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalAlignment = align) {
+    // Four 44 dp targets would overlap on a tiny picture; the exact-size dialog remains available.
+    val showHandles = canResize && w >= DocxImageResize.MIN_DP.dp
+    // A stable coordinate space for the drag: this column does not move while the box resizes.
+    var anchor by remember { mutableStateOf<LayoutCoordinates?>(null) }
+
+    fun clearPreview() {
+        dragWidth = null
+        dragCorner = null
+    }
+
+    fun commit(size: DocxImageResize.Size) {
+        val widthPt = (size.widthDp / look.scale).coerceAtLeast(1f)
+        val heightPt = (size.heightDp / look.scale).coerceAtLeast(1f)
+        clearPreview()
+        onResize(paraId, run, widthPt, heightPt)
+    }
+
+    // Done/back/unselect can remove the handles mid-gesture; never leave a preview size behind.
+    LaunchedEffect(selected, canEdit) {
+        if (!selected || !canEdit) clearPreview()
+    }
+
+    Column(
+        Modifier.fillMaxWidth().padding(vertical = 2.dp).onGloballyPositioned { anchor = it },
+        horizontalAlignment = align
+    ) {
+        val shownHeight = shown * safeRatio
         Box(
             Modifier.width(shown).aspectRatio(1f / safeRatio)
+                .offset(
+                    x = picturePreviewOffset(align, dragCorner, w, shown),
+                    // A top handle grows upward, holding the bottom edge like Word's preview.
+                    y = if (dragCorner?.startsTop == true) startHeight - shownHeight else 0.dp
+                )
                 .background(if (pic == null) look.ink.copy(0.06f) else Color.Transparent)
         ) {
             Box(
@@ -1879,82 +1972,59 @@ private fun DocPicture(
                     )
                 }
             }
-            if (selected && canResize) {
-                // Corner handles: dragging left/right changes the width, height follows the ratio.
-                // They sit just inside the outline so their touch targets stay in the page item.
-                PictureCornerHandle(
-                    modifier = Modifier.align(Alignment.TopStart),
-                    accent = accent,
-                    sign = -1f,
-                    startWidth = w,
-                    maxWidth = maxW,
-                    onPreview = { dragWidth = it },
-                    onCommit = { next ->
-                        dragWidth = null
-                        val widthPt = (next.value / look.scale).coerceAtLeast(1f)
-                        onResize(paraId, run, widthPt, widthPt * ratio)
-                    },
-                    onCancel = { dragWidth = null }
-                )
-                PictureCornerHandle(
-                    modifier = Modifier.align(Alignment.TopEnd),
-                    accent = accent,
-                    sign = 1f,
-                    startWidth = w,
-                    maxWidth = maxW,
-                    onPreview = { dragWidth = it },
-                    onCommit = { next ->
-                        dragWidth = null
-                        val widthPt = (next.value / look.scale).coerceAtLeast(1f)
-                        onResize(paraId, run, widthPt, widthPt * ratio)
-                    },
-                    onCancel = { dragWidth = null }
-                )
-                PictureCornerHandle(
-                    modifier = Modifier.align(Alignment.BottomStart),
-                    accent = accent,
-                    sign = -1f,
-                    startWidth = w,
-                    maxWidth = maxW,
-                    onPreview = { dragWidth = it },
-                    onCommit = { next ->
-                        dragWidth = null
-                        val widthPt = (next.value / look.scale).coerceAtLeast(1f)
-                        onResize(paraId, run, widthPt, widthPt * ratio)
-                    },
-                    onCancel = { dragWidth = null }
-                )
-                PictureCornerHandle(
-                    modifier = Modifier.align(Alignment.BottomEnd),
-                    accent = accent,
-                    sign = 1f,
-                    startWidth = w,
-                    maxWidth = maxW,
-                    onPreview = { dragWidth = it },
-                    onCommit = { next ->
-                        dragWidth = null
-                        val widthPt = (next.value / look.scale).coerceAtLeast(1f)
-                        onResize(paraId, run, widthPt, widthPt * ratio)
-                    },
-                    onCancel = { dragWidth = null }
-                )
+            if (selected && showHandles) {
+                for (spec in PictureHandleSpecs) {
+                    PictureCornerHandle(
+                        modifier = Modifier.align(spec.alignment),
+                        visual = spec.visual,
+                        accent = accent,
+                        corner = spec.corner,
+                        startWidth = w,
+                        startHeight = startHeight,
+                        maxWidth = maxW,
+                        maxHeight = heightCap,
+                        anchor = { anchor },
+                        onPreview = {
+                            dragCorner = spec.corner
+                            dragWidth = it.widthDp.dp
+                        },
+                        onCommit = ::commit,
+                        onCancel = ::clearPreview
+                    )
+                }
             }
-        }
-        if (selected && canEdit) {
-            ImageToolbar(
-                look = look,
-                accent = accent,
-                canPaste = canPaste,
-                canResize = canResize,
-                onCut = { onCut(paraId, run) },
-                onCopy = { onCopy(paraId, run) },
-                onPaste = { onPaste(paraId, run) },
-                onDelete = { onDelete(paraId, run) },
-                onSize = { onSize(paraId, run, maxW.value / look.scale) }
-            )
         }
     }
 }
+
+/** Holds the opposite edge still for a left handle while the preview is live. */
+private fun picturePreviewOffset(
+    align: Alignment.Horizontal,
+    corner: DocxImageResize.Corner?,
+    start: Dp,
+    shown: Dp
+): Dp {
+    if (corner == null || !corner.startsLeft) return 0.dp
+    return DocxImageResize.anchorOffsetDp(
+        start.value,
+        shown.value,
+        centerAligned = align == Alignment.CenterHorizontally,
+        endAligned = align == Alignment.End
+    ).dp
+}
+
+private data class PictureHandleSpec(
+    val corner: DocxImageResize.Corner,
+    val alignment: Alignment,
+    val visual: Alignment
+)
+
+private val PictureHandleSpecs = listOf(
+    PictureHandleSpec(DocxImageResize.Corner.TOP_START, Alignment.TopStart, Alignment.TopStart),
+    PictureHandleSpec(DocxImageResize.Corner.TOP_END, Alignment.TopEnd, Alignment.TopEnd),
+    PictureHandleSpec(DocxImageResize.Corner.BOTTOM_START, Alignment.BottomStart, Alignment.BottomStart),
+    PictureHandleSpec(DocxImageResize.Corner.BOTTOM_END, Alignment.BottomEnd, Alignment.BottomEnd)
+)
 
 /** Cut / copy / paste / delete / resize for the selected picture. */
 @Composable
@@ -1967,10 +2037,13 @@ private fun ImageToolbar(
     onCopy: () -> Unit,
     onPaste: () -> Unit,
     onDelete: () -> Unit,
-    onSize: () -> Unit
+    onSize: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Row(
-        Modifier.padding(top = 4.dp)
+        modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp)
             .clip(RoundedCornerShape(18.dp))
             .background(look.paper)
             .border(1.dp, look.ink.copy(0.14f), RoundedCornerShape(18.dp))
@@ -1994,34 +2067,43 @@ private fun ImageToolbar(
 }
 
 /**
- * A 28 dp touch target with a small visible square. The drag is local until release; the caller
- * commits one document edit then, so a gesture never re-serializes the document per frame.
+ * A 44 dp touch target with a small visible square. The gesture is captured immediately, so the
+ * parent list never steals the first slop, and it is measured in the picture column's stable
+ * coordinate space: the handle itself moves with the edge, so local deltas would stall the drag.
+ * The caller commits one document edit on release; the preview never re-serializes per frame.
  */
 @Composable
 private fun PictureCornerHandle(
     modifier: Modifier,
+    visual: Alignment,
     accent: Color,
-    sign: Float,
+    corner: DocxImageResize.Corner,
     startWidth: Dp,
+    startHeight: Dp,
     maxWidth: Dp,
-    onPreview: (Dp) -> Unit,
-    onCommit: (Dp) -> Unit,
+    maxHeight: Dp,
+    anchor: () -> LayoutCoordinates?,
+    onPreview: (DocxImageResize.Size) -> Unit,
+    onCommit: (DocxImageResize.Size) -> Unit,
     onCancel: () -> Unit
 ) {
-    var current by remember { mutableStateOf(startWidth) }
+    fun sizeAt(dx: Float, dy: Float) = DocxImageResize.drag(
+        startWidthDp = startWidth.value,
+        startHeightDp = startHeight.value,
+        dxDp = dx,
+        dyDp = dy,
+        corner = corner,
+        maxWidthDp = maxWidth.value,
+        maxHeightDp = maxHeight.value
+    )
     ResizeHandle(
         modifier = modifier,
+        visual = visual,
         accent = accent,
-        sign = sign,
-        onStart = {
-            current = startWidth
-            onPreview(current)
-        },
-        onDrag = { delta ->
-            current = (startWidth + delta.dp).coerceIn(24.dp, maxWidth)
-            onPreview(current)
-        },
-        onDone = { onCommit(current) },
+        anchor = anchor,
+        onStart = { onPreview(DocxImageResize.Size(startWidth.value, startHeight.value)) },
+        onDrag = { dx, dy -> onPreview(sizeAt(dx, dy)) },
+        onDone = { dx, dy -> onCommit(sizeAt(dx, dy)) },
         onCancel = onCancel
     )
 }
@@ -2029,34 +2111,70 @@ private fun PictureCornerHandle(
 @Composable
 private fun ResizeHandle(
     modifier: Modifier,
+    visual: Alignment,
     accent: Color,
-    sign: Float,
+    anchor: () -> LayoutCoordinates?,
     onStart: () -> Unit,
-    onDrag: (Float) -> Unit,
-    onDone: () -> Unit,
+    onDrag: (Float, Float) -> Unit,
+    onDone: (Float, Float) -> Unit,
     onCancel: () -> Unit
 ) {
     val density = LocalDensity.current
     val label = stringResource(R.string.image_tools_resize)
+    var coords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    // pointerInput(Unit) keeps its first lambda: read the newest callbacks, whose captured
+    // start size and page limits change after every commit and zoom.
+    val currentStart by rememberUpdatedState(onStart)
+    val currentDrag by rememberUpdatedState(onDrag)
+    val currentDone by rememberUpdatedState(onDone)
+    val currentCancel by rememberUpdatedState(onCancel)
     Box(
         modifier
-            .size(28.dp)
+            .size(44.dp)
+            .onGloballyPositioned { coords = it }
             .pointerInput(Unit) {
-                detectDragGestures(
-                    onDragStart = { onStart() },
-                    onDrag = { change, drag ->
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    down.consume()
+                    val anchor0 = anchor() ?: return@awaitEachGesture
+                    val handle0 = coords ?: return@awaitEachGesture
+                    val start = anchor0.localPositionOf(handle0, down.position)
+                    currentStart()
+                    var dx = 0f
+                    var dy = 0f
+                    var canceled = false
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Main)
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        if (event.changes.count { it.pressed } > 1) {
+                            canceled = true
+                            event.changes.forEach { it.consume() }
+                            break
+                        }
+                        if (!change.pressed) {
+                            change.consume()
+                            break
+                        }
+                        val a = anchor()
+                        val h = coords
+                        if (a == null || h == null) {
+                            canceled = true
+                            break
+                        }
+                        val p = a.localPositionOf(h, change.position)
+                        dx = (p.x - start.x) / density.density
+                        dy = (p.y - start.y) / density.density
                         change.consume()
-                        onDrag(sign * drag.x / density.density)
-                    },
-                    onDragEnd = { onDone() },
-                    onDragCancel = { onCancel() }
-                )
+                        currentDrag(dx, dy)
+                    }
+                    if (canceled) currentCancel() else currentDone(dx, dy)
+                }
             }
             .semantics { contentDescription = label },
-        contentAlignment = Alignment.Center
+        contentAlignment = visual
     ) {
         Box(
-            Modifier.size(10.dp)
+            Modifier.size(12.dp)
                 .background(accent, RoundedCornerShape(2.dp))
                 .border(1.dp, Color.White, RoundedCornerShape(2.dp))
         )

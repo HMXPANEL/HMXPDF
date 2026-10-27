@@ -205,6 +205,73 @@ class DocxImageEditsTest {
     }
 
     @Test
+    fun readingModeNeverAllowsPictureEditing() {
+        assertFalse(DocxImageEdits.canEditImages(editMode = false, writable = true))
+        assertFalse(DocxImageEdits.canEditImages(editMode = true, writable = false))
+        assertTrue(DocxImageEdits.canEditImages(editMode = true, writable = true))
+    }
+
+    @Test
+    fun everyCornerDragKeepsAspectRatio() {
+        val drags = listOf(
+            DocxImageResize.Corner.TOP_START to (-100f to -50f),
+            DocxImageResize.Corner.TOP_END to (100f to -50f),
+            DocxImageResize.Corner.BOTTOM_START to (-100f to 50f),
+            DocxImageResize.Corner.BOTTOM_END to (100f to 50f)
+        )
+        for ((corner, d) in drags) {
+            val s = DocxImageResize.drag(200f, 100f, d.first, d.second, corner, 1000f, 1000f)
+            assertEquals("$corner width", 300f, s.widthDp, 0.01f)
+            assertEquals("$corner height", 150f, s.heightDp, 0.01f)
+            assertEquals("$corner ratio", 2f, s.widthDp / s.heightDp, 0.001f)
+        }
+    }
+
+    @Test
+    fun dragUsesTheDominantAxisAndTheInitialSize() {
+        val vertical = DocxImageResize.drag(
+            200f, 100f, 10f, 50f, DocxImageResize.Corner.BOTTOM_END, 1000f, 1000f
+        )
+        assertEquals(300f, vertical.widthDp, 0.01f)
+        assertEquals(150f, vertical.heightDp, 0.01f)
+
+        val tiny = DocxImageResize.drag(
+            200f, 100f, 2f, 0f, DocxImageResize.Corner.BOTTOM_END, 1000f, 1000f
+        )
+        assertEquals(202f, tiny.widthDp, 0.01f)
+        assertEquals(101f, tiny.heightDp, 0.01f)
+    }
+
+    @Test
+    fun dragClampsToMinimumAndBothPageLimits() {
+        val small = DocxImageResize.drag(
+            200f, 100f, -190f, 0f, DocxImageResize.Corner.BOTTOM_END, 1000f, 1000f
+        )
+        assertEquals(DocxImageResize.MIN_DP, small.widthDp, 0.01f)
+        assertEquals(DocxImageResize.MIN_DP / 2f, small.heightDp, 0.01f)
+
+        // The height limit wins even when the width has room.
+        val capped = DocxImageResize.drag(
+            200f, 100f, 100f, 50f, DocxImageResize.Corner.BOTTOM_END, 300f, 100f
+        )
+        assertEquals(200f, capped.widthDp, 0.01f)
+        assertEquals(100f, capped.heightDp, 0.01f)
+
+        val invalid = DocxImageResize.drag(
+            0f, 0f, 10f, 10f, DocxImageResize.Corner.BOTTOM_END, 1000f, 1000f
+        )
+        assertEquals(DocxImageResize.MIN_DP, invalid.widthDp, 0.01f)
+        assertEquals(DocxImageResize.MIN_DP, invalid.heightDp, 0.01f)
+    }
+
+    @Test
+    fun leftHandlePreviewKeepsTheOppositeEdgeStill() {
+        assertEquals(50f, DocxImageResize.anchorOffsetDp(200f, 150f, centerAligned = false, endAligned = false), 0.01f)
+        assertEquals(25f, DocxImageResize.anchorOffsetDp(200f, 150f, centerAligned = true, endAligned = false), 0.01f)
+        assertEquals(0f, DocxImageResize.anchorOffsetDp(200f, 150f, centerAligned = true, endAligned = true), 0.01f)
+    }
+
+    @Test
     fun fitOnlyShrinksAndKeepsProportions() {
         assertEquals(100f to 50f, DocxImageEdits.fit(200f, 100f, 100f, 100f))
         assertEquals(50f to 25f, DocxImageEdits.fit(200f, 100f, 500f, 25f))

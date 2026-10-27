@@ -12,6 +12,12 @@ import kotlin.math.roundToLong
  */
 object DocxImageEdits {
 
+    /**
+     * The single mode gate for picture editing. A writable package is not enough: reading mode
+     * must never select a picture, change the image clipboard, or mutate the document.
+     */
+    fun canEditImages(editMode: Boolean, writable: Boolean): Boolean = editMode && writable
+
     fun isImage(f: CharFmt?): Boolean = f?.obj?.let { DocxObjects.info(it).imageRid } != null
 
     fun isImage(p: DocPara, run: Int): Boolean = isImage(p.fmts.getOrNull(run))
@@ -184,4 +190,65 @@ object DocxImageEdits {
         }
         return sb.toString()
     }
+}
+
+/**
+ * Pure corner-drag geometry, in display dp, shared by the editor and its tests. The drag is always
+ * measured from the size at gesture start, so a long drag never accumulates per-frame rounding.
+ * Corner drags keep the picture's aspect ratio; the dominant axis decides the scale, which makes a
+ * mostly-vertical drag on a wide picture behave like Word instead of doing nothing.
+ */
+object DocxImageResize {
+
+    /** The smallest picture the corner handles will produce. */
+    const val MIN_DP = 48f
+
+    enum class Corner(val startsLeft: Boolean, val startsTop: Boolean) {
+        TOP_START(true, true),
+        TOP_END(false, true),
+        BOTTOM_START(true, false),
+        BOTTOM_END(false, false)
+    }
+
+    data class Size(val widthDp: Float, val heightDp: Float)
+
+    fun drag(
+        startWidthDp: Float,
+        startHeightDp: Float,
+        dxDp: Float,
+        dyDp: Float,
+        corner: Corner,
+        maxWidthDp: Float,
+        maxHeightDp: Float,
+        minDp: Float = MIN_DP
+    ): Size {
+        if (startWidthDp <= 0f || startHeightDp <= 0f || !startWidthDp.isFinite() || !startHeightDp.isFinite()) {
+            return Size(minDp, minDp)
+        }
+        val signX = if (corner.startsLeft) -1f else 1f
+        val signY = if (corner.startsTop) -1f else 1f
+        val sx = (startWidthDp + signX * dxDp) / startWidthDp
+        val sy = (startHeightDp + signY * dyDp) / startHeightDp
+        var scale = if (kotlin.math.abs(dxDp) >= kotlin.math.abs(dyDp)) sx else sy
+        if (!scale.isFinite()) scale = 1f
+        val minScale = minDp / startWidthDp
+        val maxScale = minOf(
+            if (maxWidthDp.isFinite()) maxWidthDp / startWidthDp else Float.MAX_VALUE,
+            if (maxHeightDp.isFinite()) maxHeightDp / startHeightDp else Float.MAX_VALUE
+        )
+        scale = scale.coerceIn(minScale, maxOf(minScale, maxScale))
+        return Size(startWidthDp * scale, startHeightDp * scale)
+    }
+
+    /**
+     * Horizontal shift that keeps the opposite edge still while a start-edge handle is dragged.
+     * Inline pictures reflow to their paragraph alignment when the edit is committed, so this is
+     * preview-only; the saved OOXML carries the new extent, not a position.
+     */
+    fun anchorOffsetDp(startWidthDp: Float, widthDp: Float, centerAligned: Boolean, endAligned: Boolean): Float =
+        when {
+            endAligned -> 0f
+            centerAligned -> (startWidthDp - widthDp) / 2f
+            else -> startWidthDp - widthDp
+        }
 }

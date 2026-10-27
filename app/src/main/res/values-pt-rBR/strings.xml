@@ -984,6 +984,7 @@
     <string name="docx_share_failed">Não foi possível preparar o documento editado para compartilhar</string>
     <string name="docx_image">Imagem</string>
     <string name="docx_image_size">Tamanho da imagem</string>
+    <string name="docx_image_action_failed">Não foi possível alterar esta imagem</string>
     <string name="cut">Recortar</string>
     <string name="paste">Colar</string>
 

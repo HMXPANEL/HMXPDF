@@ -994,6 +994,7 @@
     <string name="docx_share_failed">Не удалось подготовить изменённый документ к отправке</string>
     <string name="docx_image">Изображение</string>
     <string name="docx_image_size">Размер изображения</string>
+    <string name="docx_image_action_failed">Не удалось изменить это изображение</string>
     <string name="cut">Вырезать</string>
     <string name="paste">Вставить</string>
 

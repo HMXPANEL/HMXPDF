@@ -811,6 +811,7 @@
     <string name="docx_print_failed">Couldn\'t print this document</string>
     <string name="docx_image">Image</string>
     <string name="docx_image_size">Image size</string>
+    <string name="docx_image_action_failed">Couldn\'t change this image</string>
     <string name="cut">Cut</string>
     <string name="paste">Paste</string>
     <string name="sheet_insert_row_above">Insert row above</string>

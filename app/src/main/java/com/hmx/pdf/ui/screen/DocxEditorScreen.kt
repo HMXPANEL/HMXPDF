@@ -2167,7 +2167,8 @@ private fun ResizeHandle(
                         change.consume()
                         currentDrag(dx, dy)
                     }
-                    if (canceled) currentCancel() else currentDone(dx, dy)
+                    // A tap on a handle is not a resize: never dirty the document for zero movement.
+                    if (canceled || (dx == 0f && dy == 0f)) currentCancel() else currentDone(dx, dy)
                 }
             }
             .semantics { contentDescription = label },

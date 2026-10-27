@@ -1000,6 +1000,7 @@
     <string name="docx_image">Изображение</string>
     <string name="docx_image_size">Размер изображения</string>
     <string name="docx_image_action_failed">Не удалось изменить это изображение</string>
+    <string name="docx_image_wrap_approximated">Обтекание этого рисунка показано как блок; исходное обтекание сохраняется при сохранении.</string>
     <string name="cut">Вырезать</string>
     <string name="paste">Вставить</string>
 

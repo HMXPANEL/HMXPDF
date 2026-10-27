@@ -970,6 +970,7 @@
     <string name="docx_image">صورة</string>
     <string name="docx_image_size">حجم الصورة</string>
     <string name="docx_image_action_failed">تعذّر تغيير هذه الصورة</string>
+    <string name="docx_image_wrap_approximated">يُعرض التفاف هذه الصورة ككتلة؛ يُحتفظ بالتفاف الأصلي عند الحفظ.</string>
     <string name="cut">قص</string>
     <string name="paste">لصق</string>
 

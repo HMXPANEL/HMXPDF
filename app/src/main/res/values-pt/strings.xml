@@ -993,6 +993,7 @@
     <string name="docx_image">Imagem</string>
     <string name="docx_image_size">Tamanho da imagem</string>
     <string name="docx_image_action_failed">Não foi possível alterar esta imagem</string>
+    <string name="docx_image_wrap_approximated">O ajuste desta imagem é mostrado como bloco; o ajuste original é mantido ao guardar.</string>
     <string name="cut">Recortar</string>
     <string name="paste">Colar</string>
 

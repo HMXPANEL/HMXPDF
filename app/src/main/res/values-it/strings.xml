@@ -1000,6 +1000,7 @@
     <string name="docx_image">Immagine</string>
     <string name="docx_image_size">Dimensione immagine</string>
     <string name="docx_image_action_failed">Impossibile modificare questa immagine</string>
+    <string name="docx_image_wrap_approximated">La disposizione del testo attorno a questa immagine è mostrata come blocco; la disposizione originale viene conservata al salvataggio.</string>
     <string name="cut">Taglia</string>
     <string name="paste">Incolla</string>
 

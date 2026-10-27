@@ -962,5 +962,9 @@
     <string name="save_recovery_saved">تم حفظ النسخة المستردة</string>
     <string name="save_recovery_failed">تعذر حفظ النسخة المستردة</string>
     <string name="docx_share_failed">تعذر تجهيز المستند المعدل للمشاركة</string>
+    <string name="docx_image">صورة</string>
+    <string name="docx_image_size">حجم الصورة</string>
+    <string name="cut">قص</string>
+    <string name="paste">لصق</string>
 
 </resources>

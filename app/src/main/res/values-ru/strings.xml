@@ -992,5 +992,9 @@
     <string name="save_recovery_saved">Восстановленная копия сохранена</string>
     <string name="save_recovery_failed">Не удалось сохранить восстановленную копию</string>
     <string name="docx_share_failed">Не удалось подготовить изменённый документ к отправке</string>
+    <string name="docx_image">Изображение</string>
+    <string name="docx_image_size">Размер изображения</string>
+    <string name="cut">Вырезать</string>
+    <string name="paste">Вставить</string>
 
 </resources>

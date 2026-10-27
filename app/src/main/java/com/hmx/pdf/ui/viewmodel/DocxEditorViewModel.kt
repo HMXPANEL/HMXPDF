@@ -11,14 +11,18 @@ import com.hmx.pdf.data.repository.LocalDocumentMirror
 import com.hmx.pdf.data.repository.RecentFile
 import com.hmx.pdf.data.repository.RecentFilesManager
 import com.hmx.pdf.data.repository.SaveRecovery
+import com.hmx.pdf.docx.CharFmt
 import com.hmx.pdf.docx.DocBlock
 import com.hmx.pdf.docx.DocPara
 import com.hmx.pdf.docx.DocState
 import com.hmx.pdf.docx.DocxEdits
+import com.hmx.pdf.docx.DocxImageEdits
+import com.hmx.pdf.docx.DocxObjects
 import com.hmx.pdf.docx.DocxPackage
 import com.hmx.pdf.docx.DocxReader
 import com.hmx.pdf.docx.DocxWriter
 import com.hmx.pdf.docx.findPara
+import com.hmx.pdf.docx.forEachPara
 import com.hmx.pdf.docx.mapContainerOf
 import com.hmx.pdf.docx.replacePara
 import kotlinx.coroutines.Dispatchers
@@ -114,6 +118,7 @@ class DocxEditorViewModel : ViewModel() {
             }
             pkg = parsed.first
             doc = parsed.second
+            imageClip = null
             saved = parsed.second
             original = parsed.second
             meta = Meta(fileName = name, fileUri = local, sourceUri = uri, isLoading = false)
@@ -236,6 +241,99 @@ class DocxEditorViewModel : ViewModel() {
             if (np !== p) blocks = replacePara(blocks, np) ?: blocks
         }
         if (blocks !== doc?.blocks) { lastKey = null; commit(DocState(blocks)) }
+    }
+
+    // ── images ─────────────────────────────────────────────────────────────────
+
+    /**
+     * A picture copied from this document. It keeps the original run XML and relationship id, so
+     * pasting it adds no media and no relationship: the copied run points at the same bytes.
+     * Cross-document paste is deliberately not offered, because that would require adding media,
+     * relationships and content types to the destination package.
+     */
+    data class ImageClip(val fmt: CharFmt, val rid: String)
+
+    var imageClip by mutableStateOf<ImageClip?>(null)
+        private set
+
+    /** True while the copied picture's relationship still exists in this package. */
+    val canPasteImage: Boolean
+        get() = imageClip?.let { pkg?.image(it.rid) != null } == true
+
+    fun copyImage(id: Long, run: Int): Boolean {
+        val p = doc?.let { findPara(it.blocks, id) } ?: return false
+        val f = DocxImageEdits.imageRun(p, run) ?: return false
+        val rid = f.obj?.let { DocxObjects.info(it).imageRid } ?: return false
+        if (pkg?.image(rid) == null) return false
+        imageClip = ImageClip(f, rid)
+        return true
+    }
+
+    /** Removes a picture and returns the index where its run used to be (a paste point). */
+    fun deleteImage(id: Long, run: Int): Int? {
+        val d = doc ?: return null
+        val p = findPara(d.blocks, id) ?: return null
+        if (!p.editable) return null
+        val np = DocxImageEdits.remove(p, run) ?: return null
+        val blocks = replacePara(d.blocks, np) ?: return null
+        lastKey = null
+        commit(DocState(blocks))
+        return run.coerceIn(0, np.text.length)
+    }
+
+    /** Copies first; only a successful copy removes the original. */
+    fun cutImage(id: Long, run: Int): Int? {
+        if (!copyImage(id, run)) return null
+        return deleteImage(id, run)
+    }
+
+    /** Inserts the copied picture at [at] in paragraph [id]; returns the new run's index. */
+    fun pasteImage(id: Long, at: Int): Int? {
+        val clip = imageClip ?: return null
+        val packageNow = pkg ?: return null
+        if (packageNow.image(clip.rid) == null) return null
+        val d = doc ?: return null
+        val target = findPara(d.blocks, id) ?: return null
+        if (!target.editable) return null
+        val obj = clip.fmt.obj ?: return null
+        val fmt = clip.fmt.copy(obj = DocxImageEdits.withDrawingId(obj, nextDrawingId()))
+        val np = DocxImageEdits.insert(target, at, fmt) ?: return null
+        val blocks = replacePara(d.blocks, np) ?: return null
+        lastKey = null
+        commit(DocState(blocks))
+        return at.coerceIn(0, np.text.length - 1)
+    }
+
+    fun resizeImage(
+        id: Long,
+        run: Int,
+        widthPt: Float,
+        heightPt: Float,
+        maxWidthPt: Float,
+        maxHeightPt: Float = 2000f
+    ): Boolean {
+        val d = doc ?: return false
+        val p = findPara(d.blocks, id) ?: return false
+        if (!p.editable) return false
+        val np = DocxImageEdits.resize(p, run, widthPt, heightPt, maxWidthPt, maxHeightPt) ?: return false
+        if (np === p) return true
+        val blocks = replacePara(d.blocks, np) ?: return false
+        lastKey = null
+        commit(DocState(blocks))
+        return true
+    }
+
+    private fun nextDrawingId(): Int {
+        var max = 0
+        val re = Regex("""<(?:[A-Za-z0-9_]+:)?docPr\b[^>]*\sid=["'](\d+)["']""")
+        doc?.let { d ->
+            forEachPara(d.blocks) { p ->
+                for (f in p.fmts) f.obj?.let { o ->
+                    re.find(o)?.groupValues?.get(1)?.toIntOrNull()?.let { max = maxOf(max, it) }
+                }
+            }
+        }
+        return max + 1
     }
 
     // ── saving ─────────────────────────────────────────────────────────────────

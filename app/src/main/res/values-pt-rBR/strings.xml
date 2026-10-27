@@ -982,5 +982,9 @@
     <string name="save_recovery_saved">Cópia de recuperação salva</string>
     <string name="save_recovery_failed">Não foi possível salvar a cópia de recuperação</string>
     <string name="docx_share_failed">Não foi possível preparar o documento editado para compartilhar</string>
+    <string name="docx_image">Imagem</string>
+    <string name="docx_image_size">Tamanho da imagem</string>
+    <string name="cut">Recortar</string>
+    <string name="paste">Colar</string>
 
 </resources>

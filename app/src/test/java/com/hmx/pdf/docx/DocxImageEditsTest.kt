@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayOutputStream
@@ -194,6 +195,140 @@ class DocxImageEditsTest {
     }
 
     @Test
+    fun rotationReadsDrawingMlAndLegacyVml() {
+        val rotatedInline = inline.replace(
+            "<a:xfrm>",
+            "<a:xfrm rot=\"2700000\">"
+        )
+        val rotatedVml = vml.replace(
+            "style=\"width:72pt;height:36pt\"",
+            "style=\"width:72pt;height:36pt;rotation:90\""
+        )
+        val (_, state) = read(docx("<w:p>$rotatedInline</w:p><w:p>$rotatedVml</w:p>"))
+        val ps = paras(state)
+        assertEquals(45f, DocxImageEdits.rotation(ps[0], 0)!!, 0.01f)
+        assertEquals(90f, DocxImageEdits.rotation(ps[1], 0)!!, 0.01f)
+    }
+
+    @Test
+    fun rotateRewritesOnlyTheTransformAndSurvivesRepeatedSaves() {
+        val bytes = docx("<w:p><w:r><w:t>Before </w:t></w:r>$inline<w:r><w:t> after</w:t></w:r></w:p>")
+        val (pkg, state) = read(bytes)
+        val p = paras(state)[0]
+        val run = p.text.indexOf(OBJ_CHAR)
+        assertEquals(0f, DocxImageEdits.rotation(p, run)!!, 0.01f)
+
+        val rotated = DocxImageEdits.rotate(p, run, 45f)!!
+        assertEquals(45f, DocxImageEdits.rotation(rotated, run)!!, 0.01f)
+        val xml = rotated.fmts[run].obj!!
+        assertTrue(xml.contains("rot=\"2700000\""))
+        // Rotation must never resize the inline box.
+        assertEquals(2, Regex("cx=\"914400\"").findAll(xml).count())
+        assertEquals(2, Regex("cy=\"457200\"").findAll(xml).count())
+        assertEquals(72f to 36f, DocxImageEdits.size(rotated, run))
+
+        // Resizing after a rotation keeps the angle; the two edits must not overwrite each other.
+        val resized = DocxImageEdits.resize(rotated, run, 36f, 18f, 500f)!!
+        assertEquals(45f, DocxImageEdits.rotation(resized, run)!!, 0.01f)
+        assertEquals(36f to 18f, DocxImageEdits.size(resized, run))
+
+        val first = save(bytes, pkg, DocState(replacePara(state.blocks, rotated)!!))
+        val (pkg2, state2) = read(first)
+        val again = paras(state2)[0]
+        val againRun = again.text.indexOf(OBJ_CHAR)
+        assertEquals(45f, DocxImageEdits.rotation(again, againRun)!!, 0.01f)
+        assertEquals(72f to 36f, DocxImageEdits.size(again, againRun))
+        assertEquals("Before \uFFFC after", again.text)
+        assertNotNull(pkg2.image("rIdImg"))
+
+        // Saving the reopened document again must keep the same single rotation value.
+        val second = save(first, pkg2, state2)
+        val (_, state3) = read(second)
+        val third = paras(state3)[0]
+        val thirdRun = third.text.indexOf(OBJ_CHAR)
+        assertEquals(45f, DocxImageEdits.rotation(third, thirdRun)!!, 0.01f)
+        assertEquals(1, Regex("rot=\"2700000\"").findAll(third.fmts[thirdRun].obj!!).count())
+    }
+
+    @Test
+    fun rotatingOneOfTwoPicturesLeavesTheOtherAndSharedMediaAlone() {
+        val bytes = docx("<w:p>$inline$inline</w:p>")
+        val (pkg, state) = read(bytes)
+        val p = paras(state)[0]
+        val first = p.text.indexOf(OBJ_CHAR)
+        val second = p.text.lastIndexOf(OBJ_CHAR)
+        val rotated = DocxImageEdits.rotate(p, first, 30f)!!
+        assertEquals(30f, DocxImageEdits.rotation(rotated, first)!!, 0.01f)
+        assertEquals(0f, DocxImageEdits.rotation(rotated, second)!!, 0.01f)
+        assertFalse(rotated.fmts[second].obj!!.contains("rot="))
+
+        val out = save(bytes, pkg, DocState(replacePara(state.blocks, rotated)!!))
+        val (pkg2, state2) = read(out)
+        val again = paras(state2)[0]
+        val a = again.text.indexOf(OBJ_CHAR)
+        val b = again.text.lastIndexOf(OBJ_CHAR)
+        assertEquals(30f, DocxImageEdits.rotation(again, a)!!, 0.01f)
+        assertEquals(0f, DocxImageEdits.rotation(again, b)!!, 0.01f)
+        assertNotNull(pkg2.image("rIdImg"))
+    }
+
+    @Test
+    fun floatingAnchorRotationSurvivesSaveAndReopen() {
+        val anchor = inline
+            .replace("<wp:inline ", "<wp:anchor ")
+            .replace("</wp:inline>", "</wp:anchor>")
+        val bytes = docx("<w:p>$anchor</w:p>")
+        val (pkg, state) = read(bytes)
+        val p = paras(state)[0]
+        val rotated = DocxImageEdits.rotate(p, 0, 120f)!!
+        assertEquals(120f, DocxImageEdits.rotation(rotated, 0)!!, 0.01f)
+        assertEquals(72f to 36f, DocxImageEdits.size(rotated, 0))
+
+        val out = save(bytes, pkg, DocState(replacePara(state.blocks, rotated)!!))
+        val (pkg2, state2) = read(out)
+        val again = paras(state2)[0]
+        assertEquals(120f, DocxImageEdits.rotation(again, 0)!!, 0.01f)
+        assertEquals(72f to 36f, DocxImageEdits.size(again, 0))
+        assertNotNull(pkg2.image("rIdImg"))
+    }
+
+    @Test
+    fun legacyVmlRotationSurvivesSaveAndReopen() {
+        val bytes = docx("<w:p>$vml</w:p>")
+        val (pkg, state) = read(bytes)
+        val p = paras(state)[0]
+        val rotated = DocxImageEdits.rotate(p, 0, 45f)!!
+        assertEquals(45f, DocxImageEdits.rotation(rotated, 0)!!, 0.01f)
+        assertTrue(rotated.fmts[0].obj!!.contains("rotation:45"))
+        assertEquals(72f to 36f, DocxImageEdits.size(rotated, 0))
+
+        val out = save(bytes, pkg, DocState(replacePara(state.blocks, rotated)!!))
+        val again = paras(read(out).second)[0]
+        assertEquals(45f, DocxImageEdits.rotation(again, 0)!!, 0.01f)
+        assertEquals(72f to 36f, DocxImageEdits.size(again, 0))
+    }
+
+    @Test
+    fun rotatingWithoutATransformIsRejectedWithoutChangingTheRun() {
+        val p = DocPara(1, null, "<w:p>", "", "", "\uFFFC", listOf(CharFmt("", null, "<w:r><w:t>x</w:t></w:r>")), true)
+        assertNull(DocxImageEdits.rotate(p, 0, 45f))
+        assertNull(DocxImageEdits.rotate(p, 1, 45f))
+
+        // A real picture whose transform is absent must be preserved, not rewritten blindly.
+        val noXfrm = inline.replace(Regex("<a:xfrm>.*?</a:xfrm>"), "")
+        val picture = DocPara(2, null, "<w:p>", "", "", "\uFFFC", listOf(CharFmt("", null, noXfrm)), true)
+        assertTrue(DocxImageEdits.isImage(picture, 0))
+        assertNull(DocxImageEdits.rotate(picture, 0, 45f))
+    }
+
+    @Test
+    fun rotatingToTheCurrentAngleIsANoOp() {
+        val (_, state) = read(docx("<w:p>$inline</w:p>"))
+        val p = paras(state)[0]
+        assertSame(p, DocxImageEdits.rotate(p, 0, 0f))
+    }
+
+    @Test
     fun pastedVmlPictureGetsANewShapeIdWithoutTouchingItsRelationship() {
         val (_, state) = read(docx("<w:p>$vml</w:p>"))
         val p = paras(state)[0]
@@ -265,10 +400,126 @@ class DocxImageEditsTest {
     }
 
     @Test
+    fun rotatedCornerDragFollowsThePictureAxes() {
+        // A picture turned 90° clockwise: its local top-left corner sits at the visual top-right.
+        val grown = DocxImageResize.dragRotated(
+            200f, 100f, 10f, 0f, DocxImageResize.Corner.TOP_START, 90f, 1000f, 1000f
+        )
+        assertEquals(208f, grown.widthDp, 0.01f)
+        assertEquals(104f, grown.heightDp, 0.01f)
+
+        // At 45° a sideways drag is mostly perpendicular to that corner's diagonal: a small shrink.
+        val tilted = DocxImageResize.dragRotated(
+            200f, 100f, 10f, 0f, DocxImageResize.Corner.TOP_START, 45f, 1000f, 1000f
+        )
+        assertEquals(194.34f, tilted.widthDp, 0.05f)
+        assertEquals(97.17f, tilted.heightDp, 0.05f)
+
+        // Unrotated drags keep the old dominant-axis behaviour exactly.
+        val flat = DocxImageResize.dragRotated(
+            200f, 100f, 10f, 50f, DocxImageResize.Corner.BOTTOM_END, 0f, 1000f, 1000f
+        )
+        assertEquals(300f, flat.widthDp, 0.01f)
+        assertEquals(150f, flat.heightDp, 0.01f)
+    }
+
+    @Test
     fun leftHandlePreviewKeepsTheOppositeEdgeStill() {
-        assertEquals(50f, DocxImageResize.anchorOffsetDp(200f, 150f, centerAligned = false, endAligned = false), 0.01f)
-        assertEquals(25f, DocxImageResize.anchorOffsetDp(200f, 150f, centerAligned = true, endAligned = false), 0.01f)
-        assertEquals(0f, DocxImageResize.anchorOffsetDp(200f, 150f, centerAligned = true, endAligned = true), 0.01f)
+        val start = DocxImageResize.Corner.BOTTOM_START
+        assertEquals(50f, DocxImageResize.previewOffset(200f, 100f, 150f, 75f, start).first, 0.01f)
+        assertEquals(
+            25f,
+            DocxImageResize.previewOffset(200f, 100f, 150f, 75f, start, centerAligned = true).first,
+            0.01f
+        )
+        assertEquals(
+            0f,
+            DocxImageResize.previewOffset(200f, 100f, 150f, 75f, start, endAligned = true).first,
+            0.01f
+        )
+        assertEquals(0f, DocxImageResize.previewOffset(200f, 100f, 150f, 75f, start).second, 0.01f)
+    }
+
+    @Test
+    fun rotatedPreviewKeepsTheOppositeCornerFixed() {
+        // 200x100 -> 150x75, left-bottom handle, picture already turned 90° clockwise.
+        val offset = DocxImageResize.previewOffset(
+            startWidthDp = 200f,
+            startHeightDp = 100f,
+            widthDp = 150f,
+            heightDp = 75f,
+            corner = DocxImageResize.Corner.BOTTOM_START,
+            rotationDeg = 90f
+        )
+        assertEquals(37.5f, offset.first, 0.01f)
+        assertEquals(37.5f, offset.second, 0.01f)
+    }
+
+    @Test
+    fun rotationAnglesNormalizeAndAccumulateWithoutWrapJumps() {
+        assertEquals(0f, DocxImageRotation.normalize(360f), 0.001f)
+        assertEquals(350f, DocxImageRotation.normalize(-10f), 0.001f)
+        assertEquals(47f, DocxImageRotation.normalize(407f), 0.001f)
+        assertEquals(0f, DocxImageRotation.normalize(Float.NaN), 0.001f)
+
+        assertEquals(20f, DocxImageRotation.delta(170f, -170f), 0.001f)
+        assertEquals(-20f, DocxImageRotation.delta(-170f, 170f), 0.001f)
+        assertEquals(180f, DocxImageRotation.delta(0f, 180f), 0.001f)
+
+        val session = DocxImageRotation.Session(startDegrees = 350f, pointerAngle = 10f)
+        assertEquals(355f, session.moveTo(15f), 0.001f)
+        assertEquals(5f, session.moveTo(25f), 0.001f)
+        assertEquals(355f, session.moveTo(15f), 0.001f)
+    }
+
+    @Test
+    fun rotationHandleAndRotatedBoundsFollowThePicture() {
+        val image = DocxImageOverlay.Bounds(100f, 100f, 300f, 200f)
+        val unrotated = DocxImageOverlay.rotationHandle(image, 0f, size = 40f, gap = 10f)
+        assertEquals(180f, unrotated.left, 0.01f)
+        assertEquals(50f, unrotated.top, 0.01f)
+
+        val turned = DocxImageOverlay.rotationHandle(image, 90f, size = 40f, gap = 10f)
+        assertEquals(260f, turned.left, 0.01f)
+        assertEquals(130f, turned.top, 0.01f)
+
+        val visual = DocxImageOverlay.visualBounds(image, 90f)
+        assertEquals(100f, visual.width, 0.01f)
+        assertEquals(200f, visual.height, 0.01f)
+        assertEquals(200f, (visual.left + visual.right) / 2f, 0.01f)
+        assertEquals(150f, (visual.top + visual.bottom) / 2f, 0.01f)
+    }
+
+    @Test
+    fun smartToolbarPrefersBelowThenAboveThenClamps() {
+        val viewport = DocxImageOverlay.Bounds(0f, 0f, 1000f, 1000f)
+        val image = DocxImageOverlay.Bounds(400f, 400f, 600f, 500f)
+        val below = DocxImageOverlay.toolbar(image, 300f, 50f, viewport)!!
+        assertEquals(350f, below.left, 0.01f)
+        assertEquals(508f, below.top, 0.01f)
+        assertFalse(below.above)
+
+        // The editor reserves room for the corner handles that overhang the picture box.
+        val reserved = DocxImageOverlay.toolbar(image, 300f, 50f, viewport, belowReserve = 20f)!!
+        assertEquals(528f, reserved.top, 0.01f)
+
+        val nearBottom = DocxImageOverlay.Bounds(400f, 900f, 600f, 1000f)
+        val above = DocxImageOverlay.toolbar(nearBottom, 300f, 50f, viewport)!!
+        assertTrue(above.top + 50f <= nearBottom.top)
+        assertTrue(above.above)
+
+        // A rotation grip sitting where the toolbar would go pushes it to the other side.
+        val withGrip = DocxImageOverlay.toolbar(
+            image, 300f, 50f, viewport,
+            handle = DocxImageOverlay.Bounds(450f, 510f, 550f, 560f)
+        )!!
+        assertTrue(withGrip.above)
+
+        val nearLeft = DocxImageOverlay.Bounds(-100f, 400f, 100f, 500f)
+        val clamped = DocxImageOverlay.toolbar(nearLeft, 300f, 50f, viewport)!!
+        assertEquals(0f, clamped.left, 0.01f)
+
+        assertNull(DocxImageOverlay.toolbar(DocxImageOverlay.Bounds(0f, 2000f, 100f, 2100f), 300f, 50f, viewport))
     }
 
     @Test

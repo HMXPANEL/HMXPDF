@@ -133,6 +133,11 @@
     <string name="image_tools_format">Формат</string>
     <string name="image_tools_quality">Качество</string>
     <string name="image_tools_resize">Изменение размера</string>
+    <string name="image_tools_rotate">Повернуть</string>
+    <string name="image_rotate_ccw">90° влево</string>
+    <string name="image_rotate_cw">90° вправо</string>
+    <string name="image_rotate_reset">Сбросить</string>
+    <string name="image_rotation_angle">Поворот: %1$d°</string>
     <string name="image_tools_note">Метаданные (EXIF/GPS) удаляются при экспорте.</string>
     <string name="image_tools_process">Обработать изображение</string>
     <string name="image_tools_processing">Обработка…</string>

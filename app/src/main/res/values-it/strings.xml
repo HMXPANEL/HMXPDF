@@ -133,6 +133,11 @@
     <string name="image_tools_format">Formato</string>
     <string name="image_tools_quality">Qualità</string>
     <string name="image_tools_resize">Ridimensiona</string>
+    <string name="image_tools_rotate">Ruota</string>
+    <string name="image_rotate_ccw">90° sinistra</string>
+    <string name="image_rotate_cw">90° destra</string>
+    <string name="image_rotate_reset">Reimposta</string>
+    <string name="image_rotation_angle">Rotazione: %1$d°</string>
     <string name="image_tools_note">I metadati (EXIF/GPS) verranno rimossi dall\'immagine esportata.</string>
     <string name="image_tools_process">Elabora Immagine</string>
     <string name="image_tools_processing">Elaborazione…</string>

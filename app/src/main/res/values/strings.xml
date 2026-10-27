@@ -133,6 +133,11 @@
     <string name="image_tools_format">Format</string>
     <string name="image_tools_quality">Quality</string>
     <string name="image_tools_resize">Resize</string>
+    <string name="image_tools_rotate">Rotate</string>
+    <string name="image_rotate_ccw">90° left</string>
+    <string name="image_rotate_cw">90° right</string>
+    <string name="image_rotate_reset">Reset</string>
+    <string name="image_rotation_angle">Rotation: %1$d°</string>
     <string name="image_tools_note">Metadata (EXIF/GPS) is removed on export.</string>
     <string name="image_tools_process">Process Image</string>
     <string name="image_tools_processing">Processing…</string>

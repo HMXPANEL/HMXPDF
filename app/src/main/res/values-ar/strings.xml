@@ -124,6 +124,11 @@
     <string name="image_tools_format">الصيغة</string>
     <string name="image_tools_quality">الجودة</string>
     <string name="image_tools_resize">تغيير الحجم</string>
+    <string name="image_tools_rotate">تدوير</string>
+    <string name="image_rotate_ccw">90° لليسار</string>
+    <string name="image_rotate_cw">90° لليمين</string>
+    <string name="image_rotate_reset">إعادة تعيين</string>
+    <string name="image_rotation_angle">الدوران: %1$d°</string>
     <string name="image_tools_note">تُزال البيانات الوصفية (EXIF/GPS) عند التصدير.</string>
     <string name="image_tools_process">معالجة الصورة</string>
     <string name="image_tools_processing">جارٍ المعالجة…</string>

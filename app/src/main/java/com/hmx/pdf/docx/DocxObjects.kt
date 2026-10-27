@@ -10,7 +10,9 @@ class ObjInfo(
     val textBox: List<DocBlock>,
     val pageBreak: Boolean,
     /** A floating picture's horizontal alignment ("left", "center", "right"), when it gives one. */
-    val hAlign: String? = null
+    val hAlign: String? = null,
+    /** Clockwise rotation in degrees, normalized to [0, 360). */
+    val rotationDeg: Float = 0f
 )
 
 object DocxObjects {
@@ -29,6 +31,7 @@ object DocxObjects {
         var rid = blip?.attr(obj, "embed")
         var w = 0f
         var h = 0f
+        var rotation = root.descendant("xfrm")?.attr(obj, "rot")?.toFloatOrNull()?.div(60000f) ?: 0f
         root.descendant("extent")?.let { e ->
             w = (e.attr(obj, "cx")?.toFloatOrNull() ?: 0f) / 12700f
             h = (e.attr(obj, "cy")?.toFloatOrNull() ?: 0f) / 12700f
@@ -40,12 +43,13 @@ object DocxObjects {
                 val style = generateSequence(img.parent) { it.parent }.firstNotNullOfOrNull { it.attr(obj, "style") } ?: ""
                 w = cssPt(style, "width")
                 h = cssPt(style, "height")
+                rotation = cssRotation(style)
             }
         }
         val txbx = root.descendant("txbxContent")
         val text = if (txbx != null) DocxReader.Ctx(obj).container(txbx.children, readOnly = true) else emptyList()
         val hAlign = root.descendant("positionH")?.child("align")?.let { XmlScan.unescape(it.inner(obj)).trim() }
-        return ObjInfo(rid, w, h, text, isPageBreak(obj), hAlign)
+        return ObjInfo(rid, w, h, text, isPageBreak(obj), hAlign, DocxImageRotation.normalize(rotation))
     }
 
     private fun cssPt(style: String, key: String): Float {
@@ -58,5 +62,11 @@ object DocxObjects {
             "mm" -> v * 2.83465f
             else -> v
         }
+    }
+
+    /** VML stores rotation in the shape's CSS style, in clockwise degrees. */
+    private fun cssRotation(style: String): Float {
+        val m = Regex("(?:^|;)\\s*rotation\\s*:\\s*(-?[0-9.]+)").find(style) ?: return 0f
+        return m.groupValues[1].toFloatOrNull() ?: 0f
     }
 }

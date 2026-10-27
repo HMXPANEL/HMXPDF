@@ -344,6 +344,20 @@ class DocxEditorViewModel : ViewModel() {
         return true
     }
 
+    /** Commits one clockwise rotation, in degrees, as a single undo step. */
+    fun rotateImage(id: Long, run: Int, degrees: Float): Boolean {
+        if (!canEditImages()) return false
+        val d = doc ?: return false
+        val p = findPara(d.blocks, id) ?: return false
+        if (!p.editable) return false
+        val np = DocxImageEdits.rotate(p, run, degrees) ?: return false
+        if (np === p) return true
+        val blocks = replacePara(d.blocks, np) ?: return false
+        lastKey = null
+        commit(DocState(blocks))
+        return true
+    }
+
     private fun nextDrawingId(): Int {
         var max = 0
         val re = Regex("""<(?:[A-Za-z0-9_]+:)?docPr\b[^>]*\sid=["'](\d+)["']""")

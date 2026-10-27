@@ -2041,7 +2041,12 @@ private fun ParagraphBlock(
                 val box = pictureBox(pic, look.scale, contentWidthDp, maxHeight.value)
                 val rotation = env.rotationPreview(key) ?: pic.rotationDeg
                 val preview = env.imagePreview(key)
-                Box(Modifier.fillMaxWidth(), contentAlignment = align) {
+                val contentAlign = when (align) {
+                    Alignment.CenterHorizontally -> Alignment.TopCenter
+                    Alignment.End -> Alignment.TopEnd
+                    else -> Alignment.TopStart
+                }
+                Box(Modifier.fillMaxWidth(), contentAlignment = contentAlign) {
                     DocPicture(
                         paraId = para.id,
                         run = run,

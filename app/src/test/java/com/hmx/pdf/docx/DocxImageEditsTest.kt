@@ -243,7 +243,7 @@ class DocxImageEditsTest {
         val (pkg2, state2) = read(out)
         assertNotNull(pkg2.image("rIdImg"))
         assertEquals("Keep  this", paras(state2)[0].text)
-        assertEquals("\uFFFC", paras(state2)[1].text)
+        assertEquals("Other \uFFFC", paras(state2)[1].text)
     }
 
     @Test

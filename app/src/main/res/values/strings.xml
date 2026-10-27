@@ -817,6 +817,7 @@
     <string name="docx_image">Image</string>
     <string name="docx_image_size">Image size</string>
     <string name="docx_image_action_failed">Couldn\'t change this image</string>
+    <string name="docx_image_wrap_approximated">This picture\'s wrap is shown as a block; the original wrap is kept when saving.</string>
     <string name="cut">Cut</string>
     <string name="paste">Paste</string>
     <string name="sheet_insert_row_above">Insert row above</string>

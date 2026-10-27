@@ -36,6 +36,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -43,8 +44,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -153,7 +154,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -164,6 +164,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -177,6 +178,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
@@ -196,6 +198,8 @@ import com.hmx.pdf.docx.DocxImageResize
 import com.hmx.pdf.docx.DocxImageRotation
 import com.hmx.pdf.docx.DocxObjects
 import com.hmx.pdf.docx.DocxPackage
+import com.hmx.pdf.docx.DocxPageKey
+import com.hmx.pdf.docx.DocxPictureFlow
 import com.hmx.pdf.docx.DocxStyles
 import com.hmx.pdf.docx.HighlightColors
 import com.hmx.pdf.docx.OBJ_CHAR
@@ -291,7 +295,12 @@ internal class Flat(val items: List<DocItem>, val indexOf: Map<Long, Int>, val p
  * breaks, and before paragraphs set to start a page. While reading, a paragraph Word broke across
  * two pages is shown in two parts; while editing it stays whole (one field) and the page ends after it.
  */
-internal fun flatten(blocks: List<DocBlock>, styles: DocxStyles, splitParas: Boolean): Flat {
+internal fun flatten(
+    blocks: List<DocBlock>,
+    styles: DocxStyles,
+    splitParas: Boolean,
+    measured: Set<DocxPageKey> = emptySet()
+): Flat {
     val items = ArrayList<DocItem>()
     val index = HashMap<Long, Int>()
     val pageStarts = arrayListOf(0)
@@ -319,7 +328,7 @@ internal fun flatten(blocks: List<DocBlock>, styles: DocxStyles, splitParas: Boo
             is DocPara -> {
                 val direct = Props.p(b.pPr)
                 val pp = direct.over(styles.paragraphStyle(direct.styleId).first)
-                if (pp.pageBreakBefore == true) breakHere()
+                if (pp.pageBreakBefore == true || measured.contains(DocxPageKey.Para(b.id))) breakHere()
                 val len = b.text.length
                 fun shows(i: Int): Boolean {
                     val c = b.text[i]
@@ -377,6 +386,7 @@ internal fun flatten(blocks: List<DocBlock>, styles: DocxStyles, splitParas: Boo
             is DocTable -> {
                 lastPara = null
                 for ((ri, r) in b.rows.withIndex()) {
+                    if (measured.contains(DocxPageKey.Row(b.id, ri))) breakHere()
                     var marked = false
                     for (c in r.cells) forEachPara(c.blocks) { if (it.marks.isNotEmpty()) marked = true }
                     if (marked) breakHere()
@@ -415,13 +425,18 @@ private class DocEnv(
     val onBlurred: (DocPara) -> Unit,
     val onFocusConsumed: () -> Unit,
     val onReadOnlyTap: () -> Unit,
+    /** Puts the caret in a paragraph that has no text row of its own (a picture-only block). */
+    val onActivate: (Long, Int) -> Unit,
     val selectedImage: ImageKey?,
     val onImageTap: (Long, Int) -> Unit,
     val onImageResize: (Long, Int, Float, Float) -> Unit,
     /** Reports a picture's unrotated layout bounds in root coordinates; null when it leaves. */
     val onImageBounds: (Long, Int, Rect?) -> Unit,
     /** The live free-rotation angle for one picture, or null when it is not being rotated. */
-    val rotationPreview: (ImageKey) -> Float?
+    val rotationPreview: (ImageKey) -> Float?,
+    /** The live corner-drag size for one picture, or null at rest. */
+    val imagePreview: (ImageKey) -> DocxImageResize.Preview?,
+    val onImagePreview: (ImageKey, DocxImageResize.Preview?) -> Unit
 )
 
 private tailrec fun Context.findActivity(): Activity? = when (this) {
@@ -516,6 +531,8 @@ private fun DocxEditorContent(
     var showGoTo by remember { mutableStateOf(false) }
     // Picture selection is editor state only: it is never written into the document.
     var selectedImage by remember { mutableStateOf<ImageKey?>(null) }
+    // The wrap approximation is a document limitation, not a per-picture one: say it once.
+    var wrapHinted by remember { mutableStateOf(false) }
     var insertionPoint by remember { mutableStateOf<Pair<Long, Int>?>(null) }
     var showImageSize by remember { mutableStateOf(false) }
     var imageSizeTarget by remember { mutableStateOf<ImageKey?>(null) }
@@ -529,6 +546,9 @@ private fun DocxEditorContent(
     // A free-rotation drag lives only here: the document is committed once, on release.
     var rotationPreviewKey by remember { mutableStateOf<ImageKey?>(null) }
     var rotationPreviewDeg by remember { mutableFloatStateOf(0f) }
+    // A corner drag lives here too, because its size changes the paragraph's reserved slot: the
+    // text has to reflow around the preview, not just draw it over the old box.
+    var imagePreview by remember { mutableStateOf<Pair<ImageKey, DocxImageResize.Preview>?>(null) }
     // Picture bounds are measured in the root coordinate space, where the floating chrome lives.
     val imageBounds = remember { mutableStateMapOf<ImageKey, Rect>() }
     var rootBounds by remember { mutableStateOf(Rect.Zero) }
@@ -541,7 +561,28 @@ private fun DocxEditorContent(
     val propsLook = remember(pkg) { pkg?.let { DocxLook(it, false, 1f, 1f, carlito) } }
     // Chrome colours for the picture toolbar, which floats above the page rather than in it.
     val toolbarLook = remember(pkg, paperDark) { pkg?.let { DocxLook(it, paperDark, 1f, 1f, carlito) } }
-    val flat = remember(doc, pkg, editMode) { if (doc != null && pkg != null) flatten(doc.blocks, pkg.styles, !editMode) else null }
+    // After a picture changes height, Word's cached page breaks are stale. Measure the document
+    // with the PDF layout off the main thread and use the page starts it finds as extra breaks.
+    var measuredBreaks by remember { mutableStateOf<Set<DocxPageKey>>(emptySet()) }
+    val layoutRevision = viewModel.layoutRevision
+    val currentDoc by rememberUpdatedState(doc)
+    val currentPkg by rememberUpdatedState(pkg)
+    LaunchedEffect(layoutRevision, pkg) {
+        val d = currentDoc
+        val p = currentPkg
+        if (d == null || p == null || layoutRevision == 0) {
+            measuredBreaks = emptySet()
+            return@LaunchedEffect
+        }
+        // Coalesce a quick rotate/resize pair into one measurement.
+        delay(250)
+        measuredBreaks = withContext(Dispatchers.Default) {
+            DocxPdfWriter.measuredPageStarts(context, p, d.blocks)
+        }
+    }
+    val flat = remember(doc, pkg, editMode, measuredBreaks) {
+        if (doc != null && pkg != null) flatten(doc.blocks, pkg.styles, !editMode, measuredBreaks) else null
+    }
     val labels = remember(doc, pkg) { if (doc != null && pkg != null) numberingLabels(pkg, doc.blocks) else emptyMap() }
 
     // Find, off the main thread and debounced.
@@ -787,6 +828,7 @@ private fun DocxEditorContent(
             showImageRotate = false
             imageRotateTarget = null
             rotationPreviewKey = null
+            imagePreview = null
         }
     }
 
@@ -812,6 +854,11 @@ private fun DocxEditorContent(
         selectedImage = if (selectedImage == key) null else key
         insertionPoint = id to (run + 1).coerceIn(0, p.text.length)
         focusManager.clearFocus()
+        val layout = p.fmts.getOrNull(run)?.obj?.let { DocxObjects.info(it).layout }
+        if (layout?.approximate == true && !wrapHinted) {
+            wrapHinted = true
+            Toast.makeText(context, R.string.docx_image_wrap_approximated, Toast.LENGTH_LONG).show()
+        }
     }
 
     fun copyImage(id: Long, run: Int) {
@@ -1179,6 +1226,7 @@ private fun DocxEditorContent(
                                 Toast.makeText(context, R.string.docx_readonly_part, Toast.LENGTH_LONG).show()
                             }
                         },
+                        onActivate = ::activate,
                         selectedImage = selectedImage,
                         onImageTap = ::selectImage,
                         onImageResize = { id, run, w, h ->
@@ -1190,6 +1238,10 @@ private fun DocxEditorContent(
                         },
                         rotationPreview = { key ->
                             if (rotationPreviewKey == key) rotationPreviewDeg else null
+                        },
+                        imagePreview = { key -> imagePreview?.takeIf { it.first == key }?.second },
+                        onImagePreview = { key, p ->
+                            imagePreview = if (p == null) null else key to p
                         }
                     )
                     val topRound = RoundedCornerShape(topStart = PaperCorner, topEnd = PaperCorner)
@@ -1921,18 +1973,48 @@ private fun ParagraphBlock(
     val full = remember(para, look, cell, hits, current, editable) {
         look.annotate(para, pl, cell, hits, current, withLinks = !editable)
     }
-    val annotated = remember(full, range) { if (range == null) full else full.subSequence(range.first, (range.last + 1).coerceAtMost(full.length)) }
+    val rangeBase = range?.first ?: 0
+    val annotatedBase = remember(full, range) {
+        if (range == null) full else full.subSequence(range.first, (range.last + 1).coerceAtMost(full.length))
+    }
     val objects = remember(para, range) {
         para.fmts.withIndex()
             .filter { (i, f) -> f.obj != null && (range == null || i in range) }
             .map { it.index to DocxObjects.info(it.value.obj!!) }
     }
     val pictures = objects.filter { it.second.imageRid != null }
+    // An inline picture lives in the text line. Every floating wrap mode this editor cannot flow
+    // text around is laid out as a block above the text instead (the XML is preserved untouched).
+    val inlinePics = pictures.filter { it.second.layout.flow == DocxPictureFlow.INLINE }
+    val blockPics = pictures.filter { it.second.layout.flow != DocxPictureFlow.INLINE }
     val boxes = objects.filter { it.second.textBox.isNotEmpty() }
-    val blank = remember(annotated) { annotated.text.all { it == ZWSP || it.isWhitespace() } }
+    val contentWidthDp = (maxWidth - pl.padStart - pl.padEnd).value
+    val fontScale = LocalDensity.current.fontScale
+    val inlineBoxes = HashMap<Int, PictureBox>()
+    val inlineSlots = HashMap<Int, DocxImageResize.Slot>()
+    for ((run, pic) in inlinePics) {
+        if (pic.imageRid == null || env.pkg.image(pic.imageRid) == null) continue
+        val box = pictureBox(pic, look.scale, contentWidthDp, maxHeight.value)
+        val key = ImageKey(para.id, run)
+        val rotation = env.rotationPreview(key) ?: pic.rotationDeg
+        val slot = pictureSlot(box, rotation, env.imagePreview(key))
+        inlineBoxes[run] = box
+        inlineSlots[run - rangeBase] = slot
+    }
+    val annotated = withPictureSlots(annotatedBase, inlineSlots, fontScale)
+    // A fixed Word line height would clip a picture taller than the line; let the slot set it.
+    val textStyle = if (inlinePics.isEmpty()) pl.style
+    else pl.style.copy(lineHeight = TextUnit.Unspecified, lineHeightStyle = null)
+    val blank = remember(annotatedBase) { annotatedBase.text.all { it == ZWSP || it.isWhitespace() } }
     val first = range == null || range.first == 0
     val label = if (first) env.labels[para.id] else null
     val dir = if (pl.rtl) LayoutDirection.Rtl else LocalLayoutDirection.current
+    val active = editable && env.activeId == para.id
+    // Pictures and text boxes are blocks here; a paragraph holding only them has no text row.
+    val onlyBlocks = blank && inlinePics.isEmpty() && (blockPics.isNotEmpty() || boxes.isNotEmpty())
+    var textLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    val canEditPicture = DocxImageEdits.canEditImages(env.editMode, env.pkg.writable) &&
+        !readOnly && para.editable && range == null
 
     CompositionLocalProvider(LocalLayoutDirection provides dir) {
         Column(
@@ -1947,30 +2029,38 @@ private fun ParagraphBlock(
                 TextAlign.End, TextAlign.Right -> Alignment.End
                 else -> Alignment.Start
             }
-            for ((run, pic) in pictures) {
+            for ((run, pic) in blockPics) {
+                if (pic.imageRid == null || env.pkg.image(pic.imageRid) == null) continue
                 val align = when (pic.hAlign) {
                     "center" -> Alignment.CenterHorizontally
                     "right", "outside" -> Alignment.End
                     "left", "inside" -> Alignment.Start
                     else -> paraAlign
                 }
-                DocPicture(
-                    paraId = para.id,
-                    run = run,
-                    info = pic,
-                    pkg = env.pkg,
-                    look = look,
-                    maxWidth = maxWidth - pl.padStart - pl.padEnd,
-                    maxHeight = maxHeight,
-                    align = align,
-                    selected = env.selectedImage == ImageKey(para.id, run),
-                    canEdit = DocxImageEdits.canEditImages(env.editMode, env.pkg.writable) &&
-                        !readOnly && para.editable && range == null,
-                    rotationPreview = { env.rotationPreview(ImageKey(para.id, run)) },
-                    onBounds = { r -> env.onImageBounds(para.id, run, r) },
-                    onSelect = env.onImageTap,
-                    onResize = env.onImageResize
-                )
+                val key = ImageKey(para.id, run)
+                val box = pictureBox(pic, look.scale, contentWidthDp, maxHeight.value)
+                val rotation = env.rotationPreview(key) ?: pic.rotationDeg
+                val preview = env.imagePreview(key)
+                Box(Modifier.fillMaxWidth(), contentAlignment = align) {
+                    DocPicture(
+                        paraId = para.id,
+                        run = run,
+                        info = pic,
+                        pkg = env.pkg,
+                        look = look,
+                        box = box,
+                        slot = pictureSlot(box, rotation, preview, align),
+                        selected = env.selectedImage == key,
+                        canEdit = canEditPicture,
+                        rotationPreview = { env.rotationPreview(key) },
+                        preview = preview,
+                        onBounds = { r -> env.onImageBounds(para.id, run, r) },
+                        onSelect = env.onImageTap,
+                        onResize = env.onImageResize,
+                        onPreview = { p -> env.onImagePreview(key, p) },
+                        modifier = Modifier.padding(vertical = 2.dp)
+                    )
+                }
             }
             for ((_, box) in boxes) {
                 Column(
@@ -1981,8 +2071,17 @@ private fun ParagraphBlock(
                     for (b in box.textBox) StaticBlock(b, look, env)
                 }
             }
-            if (!(blank && (pictures.isNotEmpty() || boxes.isNotEmpty()) && !editable)) {
-                Row(Modifier.fillMaxWidth()) {
+            when {
+                onlyBlocks && !active -> if (editable) {
+                    // An image-only paragraph has no text row of its own. This strip puts the caret
+                    // back into it without leaving an empty line under the picture.
+                    Box(
+                        Modifier.fillMaxWidth().height(8.dp).clickable {
+                            env.onActivate(para.id, para.text.length)
+                        }
+                    )
+                }
+                else -> Row(Modifier.fillMaxWidth()) {
                     if (label != null) {
                         BasicText(
                             label,
@@ -1992,16 +2091,35 @@ private fun ParagraphBlock(
                         )
                     }
                     Box(Modifier.weight(1f).alignByBaseline()) {
-                        if (editable) ParaField(para, pl, full, env)
-                        // Full width, like the edit field: centred and right-aligned titles were
-                        // drawn at the left while reading because the text only spanned itself.
-                        else BasicText(
-                            annotated,
-                            style = if (first) pl.style else pl.style.copy(textIndent = null),
-                            modifier = Modifier.fillMaxWidth().then(
-                                if (env.editMode && !readOnly) Modifier.clickable(remember { MutableInteractionSource() }, indication = null) { env.onReadOnlyTap() } else Modifier
+                        if (editable) {
+                            ParaField(para, pl, textStyle, annotated, { textLayout = it }, env)
+                        } else {
+                            // Full width, like the edit field: centred and right-aligned titles were
+                            // drawn at the left while reading because the text only spanned itself.
+                            BasicText(
+                                annotated,
+                                style = textStyle,
+                                onTextLayout = { textLayout = it },
+                                modifier = Modifier.fillMaxWidth().then(
+                                    if (env.editMode && !readOnly) Modifier.clickable(remember { MutableInteractionSource() }, indication = null) { env.onReadOnlyTap() } else Modifier
+                                )
                             )
-                        )
+                        }
+                        if (inlinePics.isNotEmpty()) {
+                            InlinePictureLayer(
+                                paraId = para.id,
+                                pictures = inlinePics,
+                                boxes = inlineBoxes,
+                                slots = inlineSlots,
+                                rangeBase = rangeBase,
+                                modelLength = annotatedBase.length,
+                                layout = textLayout,
+                                rtl = pl.rtl,
+                                look = look,
+                                env = env,
+                                canEdit = canEditPicture
+                            )
+                        }
                     }
                 }
             }
@@ -2012,8 +2130,72 @@ private fun ParagraphBlock(
     }
 }
 
+/**
+ * The inline pictures drawn over their reserved text slots. They are siblings of the text field,
+ * so taps on a picture select it while every other tap still reaches the caret.
+ */
 @Composable
-private fun ParaField(para: DocPara, pl: ParaLook, annotated: AnnotatedString, env: DocEnv) {
+private fun BoxScope.InlinePictureLayer(
+    paraId: Long,
+    pictures: List<Pair<Int, ObjInfo>>,
+    boxes: Map<Int, PictureBox>,
+    slots: Map<Int, DocxImageResize.Slot>,
+    rangeBase: Int,
+    /** Length of the paragraph text (or range) before the edit field adds its leading marker. */
+    modelLength: Int,
+    layout: TextLayoutResult?,
+    rtl: Boolean,
+    look: DocxLook,
+    env: DocEnv,
+    canEdit: Boolean
+) {
+    val text = layout ?: return
+    val density = LocalDensity.current.density
+    // The edit field lays out its leading zero-width marker too; the read-only text does not.
+    val shift = (text.layoutInput.text.length - modelLength).coerceIn(0, 1)
+    Box(Modifier.matchParentSize()) {
+        for ((run, pic) in pictures) {
+            val box = boxes[run] ?: continue
+            val slot = slots[run - rangeBase] ?: continue
+            val (x, y) = inlineSlotOffset(
+                text,
+                run - rangeBase + shift,
+                slot,
+                rtl,
+                density
+            )
+            val key = ImageKey(paraId, run)
+            DocPicture(
+                paraId = paraId,
+                run = run,
+                info = pic,
+                pkg = env.pkg,
+                look = look,
+                box = box,
+                slot = slot,
+                selected = env.selectedImage == key,
+                canEdit = canEdit,
+                rotationPreview = { env.rotationPreview(key) },
+                preview = env.imagePreview(key),
+                onBounds = { r -> env.onImageBounds(paraId, run, r) },
+                onSelect = env.onImageTap,
+                onResize = env.onImageResize,
+                onPreview = { p -> env.onImagePreview(key, p) },
+                modifier = Modifier.absoluteOffset { IntOffset(x.roundToInt(), y.roundToInt()) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun ParaField(
+    para: DocPara,
+    pl: ParaLook,
+    textStyle: TextStyle,
+    annotated: AnnotatedString,
+    onLayout: (TextLayoutResult) -> Unit,
+    env: DocEnv
+) {
     val active = env.activeId == para.id
     val value = if (active) {
         val v = env.activeValue
@@ -2031,9 +2213,10 @@ private fun ParaField(para: DocPara, pl: ParaLook, annotated: AnnotatedString, e
     BasicTextField(
         value = value,
         onValueChange = { env.onChange(para, it) },
-        textStyle = pl.style,
+        textStyle = textStyle,
         cursorBrush = SolidColor(env.accent),
         visualTransformation = transformation,
+        onTextLayout = onLayout,
         modifier = Modifier
             .fillMaxWidth()
             .focusRequester(focus)
@@ -2103,6 +2286,44 @@ internal object DocImages {
     }
 }
 
+/** The slot a picture reserves in its paragraph, including a live resize preview. */
+private fun pictureSlot(
+    box: PictureBox,
+    rotation: Float,
+    preview: DocxImageResize.Preview?,
+    align: Alignment.Horizontal? = null
+): DocxImageResize.Slot {
+    if (preview == null) return DocxImageResize.slot(box.widthDp, box.heightDp, rotationDeg = rotation)
+    val center = align == Alignment.CenterHorizontally
+    val end = align == Alignment.End
+    val (dx, dy) = DocxImageResize.previewOffset(
+        startWidthDp = box.widthDp,
+        startHeightDp = box.heightDp,
+        widthDp = preview.size.widthDp,
+        heightDp = preview.size.heightDp,
+        corner = preview.corner,
+        rotationDeg = rotation,
+        centerAligned = center,
+        endAligned = end
+    )
+    // previewOffset is measured from the aligned preview box; the slot is laid out from the
+    // committed box, so shift it back by the alignment difference.
+    val baseX = when {
+        end -> box.widthDp - preview.size.widthDp
+        center -> (box.widthDp - preview.size.widthDp) / 2f
+        else -> 0f
+    }
+    return DocxImageResize.slot(
+        startWidthDp = box.widthDp,
+        startHeightDp = box.heightDp,
+        shownWidthDp = preview.size.widthDp,
+        shownHeightDp = preview.size.heightDp,
+        rotationDeg = rotation,
+        previewX = dx + baseX,
+        previewY = dy
+    )
+}
+
 @Composable
 private fun DocPicture(
     paraId: Long,
@@ -2110,36 +2331,28 @@ private fun DocPicture(
     info: ObjInfo,
     pkg: DocxPackage,
     look: DocxLook,
-    maxWidth: Dp,
-    maxHeight: Dp,
-    align: Alignment.Horizontal,
+    box: PictureBox,
+    slot: DocxImageResize.Slot,
     selected: Boolean,
     canEdit: Boolean,
     /** Live angle while the rotation handle is being dragged; null at rest. */
     rotationPreview: () -> Float?,
+    /** Live corner-drag size; the caller has already widened [slot] to hold it. */
+    preview: DocxImageResize.Preview?,
     onBounds: (Rect?) -> Unit,
     onSelect: (Long, Int) -> Unit,
-    onResize: (Long, Int, Float, Float) -> Unit
+    onResize: (Long, Int, Float, Float) -> Unit,
+    onPreview: (DocxImageResize.Preview?) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val rid = info.imageRid ?: return
     val committedRotation = DocxImageRotation.normalize(info.rotationDeg)
     val previewRotation = rotationPreview()
     val shownRotation = previewRotation ?: committedRotation
+    val shown = preview?.size ?: DocxImageResize.Size(box.widthDp, box.heightDp)
     val bytes = remember(pkg, rid) { pkg.image(rid) }
-    val ratio = if (info.widthPt > 0f && info.heightPt > 0f) info.heightPt / info.widthPt else 0.6f
-    val safeRatio = ratio.coerceIn(0.05f, 20f)
-    val widthCap = maxWidth.coerceAtLeast(12.dp)
-    val heightCap = maxHeight.coerceAtLeast(12.dp)
-    // A tall picture may be wider than the text column yet still taller than the page: cap both.
-    val maxW = widthCap.coerceAtMost(heightCap / safeRatio).coerceAtLeast(12.dp)
-    val want = if (info.widthPt > 0f) (info.widthPt * look.scale).dp else maxW
-    val w = want.coerceAtMost(maxW).coerceAtLeast(12.dp)
-    val startHeight = w * safeRatio
-    // The preview follows the finger locally; the document is committed once, on release.
-    var dragWidth by remember { mutableStateOf<Dp?>(null) }
-    var dragCorner by remember { mutableStateOf<DocxImageResize.Corner?>(null) }
-    val shown = dragWidth ?: w
-    val px = with(LocalDensity.current) { shown.roundToPx() }
+    val density = LocalDensity.current.density
+    val px = (shown.widthDp * density).roundToInt()
     val bucket = (px / 128 + 1) * 128
     val pic by produceState<DecodedPicture?>(null, bytes, bucket) {
         val b = bytes ?: return@produceState
@@ -2155,67 +2368,60 @@ private fun DocPicture(
     // Four 44 dp targets would overlap on a tiny picture; the exact-size dialog remains available.
     // Edge-midpoint handles are deliberately absent: this engine keeps the aspect ratio, so an
     // edge drag would either be a no-op or silently scale both axes. Corners already do that.
-    val showHandles = canResize && w >= DocxImageResize.MIN_DP.dp
-    // A stable coordinate space for the drag: this column does not move while the box resizes.
-    var anchor by remember { mutableStateOf<LayoutCoordinates?>(null) }
-    var localRect by remember { mutableStateOf<Rect?>(null) }
+    val showHandles = canResize && box.widthDp >= DocxImageResize.MIN_DP
+    var slotCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
     val currentOnBounds by rememberUpdatedState(onBounds)
+    val currentPreview by rememberUpdatedState(preview)
+    val currentOnPreview by rememberUpdatedState(onPreview)
     // The floating toolbar must not keep using the bounds of a picture that left the composition.
-    DisposableEffect(paraId, run) { onDispose { currentOnBounds(null) } }
-    // Selection can change without a relayout; report the already-measured box immediately.
-    LaunchedEffect(selected, localRect, anchor) {
-        if (!selected) {
+    DisposableEffect(paraId, run) {
+        onDispose {
+            currentOnBounds(null)
+            if (currentPreview != null) currentOnPreview(null)
+        }
+    }
+    val drawLeft = slot.drawLeftDp * density
+    val drawTop = slot.drawTopDp * density
+    val drawWidth = shown.widthDp * density
+    val drawHeight = shown.heightDp * density
+    // The slot box is measured unrotated, so its origin plus the draw offset is the picture's
+    // unrotated layout box in root coordinates: the toolbar and grip rotate it themselves.
+    LaunchedEffect(selected, slotCoords, drawLeft, drawTop, drawWidth, drawHeight) {
+        val c = slotCoords
+        if (!selected || c == null) {
             currentOnBounds(null)
             return@LaunchedEffect
         }
-        val a = anchor ?: return@LaunchedEffect
-        val r = localRect ?: return@LaunchedEffect
-        currentOnBounds(Rect(a.localToRoot(r.topLeft), r.size))
-    }
-
-    fun clearPreview() {
-        dragWidth = null
-        dragCorner = null
+        val p = c.localToRoot(Offset(drawLeft, drawTop))
+        currentOnBounds(Rect(p.x, p.y, p.x + drawWidth, p.y + drawHeight))
     }
 
     fun commit(size: DocxImageResize.Size) {
-        val widthPt = (size.widthDp / look.scale).coerceAtLeast(1f)
-        val heightPt = (size.heightDp / look.scale).coerceAtLeast(1f)
-        clearPreview()
-        onResize(paraId, run, widthPt, heightPt)
+        // Map the displayed size back through the document's extent ratio: a picture that was
+        // capped to the page must not shrink to the cap when it is resized once.
+        val widthPt = if (info.widthPt > 0f) info.widthPt * size.widthDp / box.widthDp
+        else size.widthDp / look.scale
+        val heightPt = if (info.heightPt > 0f) info.heightPt * size.heightDp / box.heightDp
+        else size.heightDp / look.scale
+        currentOnPreview(null)
+        onResize(paraId, run, widthPt.coerceAtLeast(1f), heightPt.coerceAtLeast(1f))
     }
 
     // Done/back/unselect can remove the handles mid-gesture; never leave a preview size behind.
-    LaunchedEffect(selected, canEdit) {
-        if (!selected || !canEdit) clearPreview()
+    LaunchedEffect(selected, canEdit, preview) {
+        if ((!selected || !canEdit) && preview != null) currentOnPreview(null)
     }
 
-    Column(
-        Modifier.fillMaxWidth().padding(vertical = 2.dp).onGloballyPositioned { anchor = it },
-        horizontalAlignment = align
+    Box(
+        modifier
+            .size(slot.widthDp.dp, slot.heightDp.dp)
+            .onGloballyPositioned { slotCoords = it },
+        contentAlignment = Alignment.TopStart
     ) {
-        val shownHeight = shown * safeRatio
-        val previewOffset = picturePreviewOffset(
-            align = align,
-            corner = dragCorner,
-            startWidth = w,
-            startHeight = startHeight,
-            shownWidth = shown,
-            shownHeight = shownHeight,
-            rotation = committedRotation
-        )
         Box(
-            Modifier.width(shown).aspectRatio(1f / safeRatio)
-                .offset(x = previewOffset.first.dp, y = previewOffset.second.dp)
-                // Measured outside the rotation layer, so the reported box is the unrotated layout
-                // box: the toolbar and grip rotate it themselves instead of double-rotating an AABB.
-                .onGloballyPositioned { c ->
-                    val p = c.positionInParent()
-                    val r = Rect(p.x, p.y, p.x + c.size.width, p.y + c.size.height)
-                    localRect = r
-                    val a = anchor
-                    if (selected && a != null) currentOnBounds(Rect(a.localToRoot(r.topLeft), r.size))
-                }
+            Modifier
+                .absoluteOffset { IntOffset(drawLeft.roundToInt(), drawTop.roundToInt()) }
+                .size(shown.widthDp.dp, shown.heightDp.dp)
                 .graphicsLayer { rotationZ = shownRotation }
                 .background(if (pic == null) look.ink.copy(0.06f) else Color.Transparent)
         ) {
@@ -2254,45 +2460,18 @@ private fun DocPicture(
                         accent = accent,
                         corner = spec.corner,
                         rotation = committedRotation,
-                        startWidth = w,
-                        startHeight = startHeight,
-                        maxWidth = maxW,
-                        maxHeight = heightCap,
-                        anchor = { anchor },
-                        onPreview = {
-                            dragCorner = spec.corner
-                            dragWidth = it.widthDp.dp
-                        },
+                        startWidth = box.widthDp.dp,
+                        startHeight = box.heightDp.dp,
+                        maxWidth = box.maxWidthDp.dp,
+                        maxHeight = box.maxHeightDp.dp,
+                        onPreview = { size -> onPreview(DocxImageResize.Preview(size, spec.corner)) },
                         onCommit = ::commit,
-                        onCancel = ::clearPreview
+                        onCancel = { onPreview(null) }
                     )
                 }
             }
         }
     }
-}
-
-/** Preview shift that keeps the dragged corner's opposite corner still on screen. */
-private fun picturePreviewOffset(
-    align: Alignment.Horizontal,
-    corner: DocxImageResize.Corner?,
-    startWidth: Dp,
-    startHeight: Dp,
-    shownWidth: Dp,
-    shownHeight: Dp,
-    rotation: Float
-): Pair<Float, Float> {
-    if (corner == null) return 0f to 0f
-    return DocxImageResize.previewOffset(
-        startWidthDp = startWidth.value,
-        startHeightDp = startHeight.value,
-        widthDp = shownWidth.value,
-        heightDp = shownHeight.value,
-        corner = corner,
-        rotationDeg = rotation,
-        centerAligned = align == Alignment.CenterHorizontally,
-        endAligned = align == Alignment.End
-    )
 }
 
 private fun Rect.toOverlayBounds() = DocxImageOverlay.Bounds(left, top, right, bottom)
@@ -2354,8 +2533,8 @@ private fun ImageToolbar(
 
 /**
  * A 44 dp touch target with a small visible circle. The gesture is captured immediately, so the
- * parent list never steals the first slop, and it is measured in the picture column's stable
- * coordinate space: the handle itself moves with the edge, so local deltas would stall the drag.
+ * parent list never steals the first slop, and the pointer is followed in root coordinates: the
+ * handle itself moves with the edge (and the slot reflows), so local deltas would stall the drag.
  * The caller commits one document edit on release; the preview never re-serializes per frame.
  */
 @Composable
@@ -2369,7 +2548,6 @@ private fun PictureCornerHandle(
     startHeight: Dp,
     maxWidth: Dp,
     maxHeight: Dp,
-    anchor: () -> LayoutCoordinates?,
     onPreview: (DocxImageResize.Size) -> Unit,
     onCommit: (DocxImageResize.Size) -> Unit,
     onCancel: () -> Unit
@@ -2389,7 +2567,6 @@ private fun PictureCornerHandle(
         modifier = modifier,
         visual = visual,
         accent = accent,
-        anchor = anchor,
         onStart = { onPreview(DocxImageResize.Size(startWidth.value, startHeight.value)) },
         onDrag = { dx, dy -> onPreview(sizeAt(dx, dy)) },
         onDone = { dx, dy -> onCommit(sizeAt(dx, dy)) },
@@ -2402,7 +2579,6 @@ private fun ResizeHandle(
     modifier: Modifier,
     visual: Alignment,
     accent: Color,
-    anchor: () -> LayoutCoordinates?,
     onStart: () -> Unit,
     onDrag: (Float, Float) -> Unit,
     onDone: (Float, Float) -> Unit,
@@ -2425,9 +2601,8 @@ private fun ResizeHandle(
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     down.consume()
-                    val anchor0 = anchor() ?: return@awaitEachGesture
                     val handle0 = coords ?: return@awaitEachGesture
-                    val start = anchor0.localPositionOf(handle0, down.position)
+                    val start = handle0.localToRoot(down.position)
                     currentStart()
                     var dx = 0f
                     var dy = 0f
@@ -2444,13 +2619,12 @@ private fun ResizeHandle(
                             change.consume()
                             break
                         }
-                        val a = anchor()
                         val h = coords
-                        if (a == null || h == null) {
+                        if (h == null) {
                             canceled = true
                             break
                         }
-                        val p = a.localPositionOf(h, change.position)
+                        val p = h.localToRoot(change.position)
                         dx = (p.x - start.x) / density.density
                         dy = (p.y - start.y) / density.density
                         change.consume()

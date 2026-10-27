@@ -3,6 +3,7 @@ package com.hmx.pdf.ui.viewmodel
 import android.content.Context
 import android.net.Uri
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
@@ -72,6 +73,14 @@ class DocxEditorViewModel : ViewModel() {
     var restoreEpoch by mutableStateOf(0)
         private set
 
+    /**
+     * Bumped when a picture changes the document's height (an image edit, or undo/redo of one), so
+     * the editor can measure the new page breaks. Typing does not bump it: measuring the whole
+     * document on every keystroke would be worse than a stale page boundary until the next image.
+     */
+    var layoutRevision by mutableIntStateOf(0)
+        private set
+
     val dirty: Boolean get() = doc != null && doc !== saved
     val editable: Boolean get() = pkg?.writable == true && meta.fileUri?.scheme == "file"
 
@@ -131,6 +140,7 @@ class DocxEditorViewModel : ViewModel() {
             pkg = parsed.first
             doc = parsed.second
             imageClip = null
+            layoutRevision = 0
             editMode = false
             saved = parsed.second
             original = parsed.second
@@ -149,7 +159,7 @@ class DocxEditorViewModel : ViewModel() {
      * Replaces the document. Typing into one paragraph coalesces into one undo step (per [key],
      * until a pause); everything else is its own step.
      */
-    private fun commit(next: DocState, key: String? = null) {
+    private fun commit(next: DocState, key: String? = null, relayout: Boolean = false) {
         val cur = doc ?: return
         if (next === cur) return
         val now = System.currentTimeMillis()
@@ -162,6 +172,7 @@ class DocxEditorViewModel : ViewModel() {
         lastAt = now
         redoStack.clear()
         doc = next
+        if (relayout) layoutRevision++
         canUndo = undoStack.isNotEmpty()
         canRedo = false
     }
@@ -176,6 +187,7 @@ class DocxEditorViewModel : ViewModel() {
         lastKey = null
         canUndo = undoStack.isNotEmpty(); canRedo = true
         restoreEpoch++
+        layoutRevision++
     }
 
     fun redo() {
@@ -185,6 +197,7 @@ class DocxEditorViewModel : ViewModel() {
         lastKey = null
         canUndo = true; canRedo = redoStack.isNotEmpty()
         restoreEpoch++
+        layoutRevision++
     }
 
     fun para(id: Long): DocPara? = doc?.let { findPara(it.blocks, id) }
@@ -295,7 +308,7 @@ class DocxEditorViewModel : ViewModel() {
         val np = DocxImageEdits.remove(p, run) ?: return null
         val blocks = replacePara(d.blocks, np) ?: return null
         lastKey = null
-        commit(DocState(blocks))
+        commit(DocState(blocks), relayout = true)
         return run.coerceIn(0, np.text.length)
     }
 
@@ -320,7 +333,7 @@ class DocxEditorViewModel : ViewModel() {
         val np = DocxImageEdits.insert(target, at, fmt) ?: return null
         val blocks = replacePara(d.blocks, np) ?: return null
         lastKey = null
-        commit(DocState(blocks))
+        commit(DocState(blocks), relayout = true)
         return at.coerceIn(0, np.text.length - 1)
     }
 
@@ -340,7 +353,7 @@ class DocxEditorViewModel : ViewModel() {
         if (np === p) return true
         val blocks = replacePara(d.blocks, np) ?: return false
         lastKey = null
-        commit(DocState(blocks))
+        commit(DocState(blocks), relayout = true)
         return true
     }
 
@@ -354,7 +367,7 @@ class DocxEditorViewModel : ViewModel() {
         if (np === p) return true
         val blocks = replacePara(d.blocks, np) ?: return false
         lastKey = null
-        commit(DocState(blocks))
+        commit(DocState(blocks), relayout = true)
         return true
     }
 

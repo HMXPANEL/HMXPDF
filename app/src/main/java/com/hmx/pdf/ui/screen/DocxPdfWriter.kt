@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.text.AnnotatedString
@@ -27,14 +28,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import com.hmx.pdf.docx.DocBlock
 import com.hmx.pdf.docx.DocPara
 import com.hmx.pdf.docx.DocRaw
 import com.hmx.pdf.docx.DocRow
 import com.hmx.pdf.docx.DocTable
+import com.hmx.pdf.docx.DocxImageResize
 import com.hmx.pdf.docx.DocxObjects
 import com.hmx.pdf.docx.DocxPackage
+import com.hmx.pdf.docx.DocxPageKey
+import com.hmx.pdf.docx.DocxPictureFlow
 import com.hmx.pdf.docx.ObjInfo
 import com.hmx.pdf.docx.RProps
 import com.hmx.pdf.docx.tableGridBefore
@@ -58,12 +63,27 @@ internal object DocxPdfWriter {
         runCatching { Exporter(context, pkg, blocks).run(out); true }
             .onFailure { Log.w("DocxPdf", "Couldn't draw the document as a PDF", it) }
             .getOrDefault(false)
+
+    /**
+     * The page starts the PDF layout would choose for this document, measured without drawing.
+     * The editor adds these to Word's marks after a picture changes, so its pages reflow with the
+     * picture instead of following a stale `lastRenderedPageBreak`.
+     */
+    fun measuredPageStarts(context: Context, pkg: DocxPackage, blocks: List<DocBlock>): Set<DocxPageKey> =
+        runCatching { Exporter(context, pkg, blocks, measureOnly = true).run(null) }
+            .onFailure { Log.w("DocxPdf", "Couldn't measure the document's pages", it) }
+            .getOrDefault(emptySet())
 }
 
 /** Something laid out: its height in points, where a page may end inside it, and how to draw it at (0, 0). */
 private class Laid(val height: Float, val breaks: FloatArray, val draw: DrawScope.() -> Unit)
 
-private class Exporter(context: Context, private val pkg: DocxPackage, private val blocks: List<DocBlock>) {
+private class Exporter(
+    context: Context,
+    private val pkg: DocxPackage,
+    private val blocks: List<DocBlock>,
+    private val measureOnly: Boolean = false
+) {
     private val density = Density(1f, 1f)
     private val look = DocxLook(pkg, false, 1f, 1f, DocxLook.carlito())
     private val measurer = TextMeasurer(createFontFamilyResolver(context), density, LayoutDirection.Ltr, 0)
@@ -76,12 +96,16 @@ private class Exporter(context: Context, private val pkg: DocxPackage, private v
     private val top = setup.top.coerceAtLeast(0) / 20f
     private val bottom = setup.bottom.coerceAtLeast(0) / 20f
     private val textW = (pageW - left - right).coerceAtLeast(72f)
+    private val textH = (pageH - top - bottom).coerceAtLeast(72f)
     private val scope = CanvasDrawScope()
     private val bitmapPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+    private val measured = LinkedHashSet<DocxPageKey>()
+    private var currentKey: DocxPageKey? = null
 
-    fun run(out: File) {
+    /** Lays the document out, optionally draws it, and returns the overflow page starts it found. */
+    fun run(out: File?): Set<DocxPageKey> {
         val flat = flatten(blocks, pkg.styles, splitParas = true)
-        val doc = PdfDocument()
+        val doc = if (measureOnly) null else PdfDocument()
         var page: PdfDocument.Page? = null
         var number = 0
         var y = 0f
@@ -89,19 +113,32 @@ private class Exporter(context: Context, private val pkg: DocxPackage, private v
         val limit = pageH - bottom
 
         fun newPage() {
-            page?.let(doc::finishPage)
+            page?.let { doc?.finishPage(it) }
             number++
-            page = doc.startPage(PdfDocument.PageInfo.Builder(pageW.roundToInt(), pageH.roundToInt(), number).create())
+            if (!measureOnly) {
+                page = doc?.startPage(
+                    PdfDocument.PageInfo.Builder(pageW.roundToInt(), pageH.roundToInt(), number).create()
+                )
+            }
             y = top
             fresh = true
         }
 
+        // A page was started because the item on it did not fit: the editor starts that whole item
+        // on a new page too (it keeps paragraphs and table rows whole).
+        fun overflowPage() {
+            currentKey?.let { measured.add(it) }
+            newPage()
+        }
+
         fun slice(l: Laid, from: Float, to: Float) {
-            val p = page ?: return
-            val at = y
-            scope.draw(density, LayoutDirection.Ltr, Canvas(p.canvas), Size(pageW, pageH)) {
-                clipRect(0f, at, pageW, at + (to - from)) {
-                    translate(left, at - from) { l.draw(this) }
+            if (!measureOnly) {
+                val p = page ?: return
+                val at = y
+                scope.draw(density, LayoutDirection.Ltr, Canvas(p.canvas), Size(pageW, pageH)) {
+                    clipRect(0f, at, pageW, at + (to - from)) {
+                        translate(left, at - from) { l.draw(this) }
+                    }
                 }
             }
             y += to - from
@@ -110,7 +147,8 @@ private class Exporter(context: Context, private val pkg: DocxPackage, private v
 
         // Whole when it fits; otherwise up to the last line (or picture, or row) that does, and the
         // rest on the next page. Something taller than a whole page is cut where the page ends.
-        fun place(l: Laid) {
+        fun place(l: Laid, key: DocxPageKey) {
+            currentKey = key
             var from = 0f
             while (l.height - from > 0.01f) {
                 val avail = limit - y
@@ -118,11 +156,11 @@ private class Exporter(context: Context, private val pkg: DocxPackage, private v
                 var cut = -1f
                 for (b in l.breaks) if (b > from + 0.5f && b - from <= avail && b > cut) cut = b
                 when {
-                    cut > 0f -> { slice(l, from, cut); from = cut; newPage() }
-                    !fresh -> newPage()
+                    cut > 0f -> { slice(l, from, cut); from = cut; overflowPage() }
+                    !fresh -> overflowPage()
                     else -> {
                         val to = from + avail.coerceAtLeast(1f)
-                        slice(l, from, to); from = to; newPage()
+                        slice(l, from, to); from = to; overflowPage()
                     }
                 }
             }
@@ -134,18 +172,26 @@ private class Exporter(context: Context, private val pkg: DocxPackage, private v
             is DocItem.Gap -> if (!fresh) newPage()
             is DocItem.Bottom -> Unit
             is DocItem.Para -> place(
-                para(item.para, look, textW, null, item.range, item.spaceTop && item.first, item.spaceBottom && item.last)
+                para(item.para, look, textW, null, item.range, item.spaceTop && item.first, item.spaceBottom && item.last),
+                DocxPageKey.Para(item.para.id)
             )
-            is DocItem.TRow -> place(row(item.table, item.row, item.rowIndex, look, textW))
+            is DocItem.TRow -> place(
+                row(item.table, item.row, item.rowIndex, look, textW),
+                DocxPageKey.Row(item.table.id, item.rowIndex)
+            )
         }
+        if (measureOnly) return measured
         if (page == null) newPage()
-        page?.let(doc::finishPage)
-        out.parentFile?.mkdirs()
-        try {
-            FileOutputStream(out).use { doc.writeTo(it) }
-        } finally {
-            doc.close()
+        page?.let { doc?.finishPage(it) }
+        if (out != null) {
+            out.parentFile?.mkdirs()
+            try {
+                FileOutputStream(out).use { doc?.writeTo(it) }
+            } finally {
+                doc?.close()
+            }
         }
+        return measured
     }
 
     /** One paragraph, as [ParagraphBlock] lays it out: pictures, text boxes, label + text, rule. */
@@ -160,13 +206,15 @@ private class Exporter(context: Context, private val pkg: DocxPackage, private v
     ): Laid {
         val pl = lk.para(p, cell)
         val full = lk.annotate(p, pl, cell)
-        val annotated = if (range == null) full else full.subSequence(range.first, (range.last + 1).coerceAtMost(full.length))
+        val annotatedText = if (range == null) full else full.subSequence(range.first, (range.last + 1).coerceAtMost(full.length))
         val objects = p.fmts.withIndex()
             .filter { (i, f) -> f.obj != null && (range == null || i in range) }
-            .map { DocxObjects.info(it.value.obj!!) }
-        val pictures = objects.filter { it.imageRid != null }
-        val boxes = objects.filter { it.textBox.isNotEmpty() }
-        val blank = annotated.text.all { it == '​' || it.isWhitespace() }
+            .map { it.index to DocxObjects.info(it.value.obj!!) }
+        val pictures = objects.filter { it.second.imageRid != null }
+        val textBoxes = objects.filter { it.second.textBox.isNotEmpty() }
+        val inlinePics = pictures.filter { it.second.layout.flow == DocxPictureFlow.INLINE }
+        val blockPics = pictures.filter { it.second.layout.flow != DocxPictureFlow.INLINE }
+        val blank = annotatedText.text.all { it == '\u200B' || it.isWhitespace() }
         val first = range == null || range.first == 0
         val label = if (first) labels[p.id] else null
         val rtl = pl.rtl
@@ -177,17 +225,27 @@ private class Exporter(context: Context, private val pkg: DocxPackage, private v
         val contentX = if (rtl) padEnd else padStart
         val before = if (spaceTop) pl.before.value else 0f
         val after = if (spaceBottom) pl.after.value else 0f
+        val rangeBase = range?.first ?: 0
+        val inlineSlots = HashMap<Int, DocxImageResize.Slot>()
+        val inlineBoxes = HashMap<Int, PictureBox>()
+        for ((run, pic) in inlinePics) {
+            if (pkg.image(pic.imageRid!!) == null) continue
+            val box = pictureBox(pic, lk.scale, contentW, textH)
+            inlineBoxes[run] = box
+            inlineSlots[run - rangeBase] = DocxImageResize.slot(box.widthDp, box.heightDp, rotationDeg = pic.rotationDeg)
+        }
+        val annotated = withPictureSlots(annotatedText, inlineSlots, 1f)
 
         class Part(val x: Float, val y: Float, val l: Laid)
         val parts = ArrayList<Part>()
         val breaks = ArrayList<Float>()
         var y = before
 
-        for (pic in pictures) {
-            val l = picture(pic, lk, contentW, pl.style.textAlign, rtl) ?: continue
+        for ((_, pic) in blockPics) {
+            val l = picture(pic, lk, contentW, textH, pl.style.textAlign, rtl) ?: continue
             parts += Part(contentX, y, l); y += l.height; breaks += y
         }
-        for (box in boxes) {
+        for ((_, box) in textBoxes) {
             val inner = stack(box.textBox, lk, (contentW - 16f).coerceAtLeast(8f))
             val h = inner.height + 16f
             val ink = lk.ink.copy(0.22f)
@@ -197,12 +255,14 @@ private class Exporter(context: Context, private val pkg: DocxPackage, private v
             }
             parts += Part(contentX, y, l); y += l.height; breaks += y
         }
-        if (!(blank && (pictures.isNotEmpty() || boxes.isNotEmpty()))) {
+        if (!(blank && inlinePics.isEmpty() && (blockPics.isNotEmpty() || textBoxes.isNotEmpty()))) {
             val labelW = if (label != null) pl.hanging.value else 0f
             val bodyW = (contentW - labelW).coerceAtLeast(8f)
+            val textStyle = (if (first) pl.style else pl.style.copy(textIndent = null))
+                .let { if (inlinePics.isNotEmpty()) it.copy(lineHeight = TextUnit.Unspecified, lineHeightStyle = null) else it }
             val text = measurer.measure(
                 annotated,
-                if (first) pl.style else pl.style.copy(textIndent = null),
+                textStyle,
                 constraints = Constraints.fixedWidth(bodyW.roundToInt().coerceAtLeast(1)),
                 layoutDirection = dir
             )
@@ -215,9 +275,9 @@ private class Exporter(context: Context, private val pkg: DocxPackage, private v
                 layoutDirection = dir
             ) else null
             // Label and text share their first baseline, like the editor's alignByBaseline row.
-            val base = maxOf(text.firstBaseline, lab?.firstBaseline ?: 0f)
-            val ty = base - text.firstBaseline
-            val ly = base - (lab?.firstBaseline ?: 0f)
+            val baseline = maxOf(text.firstBaseline, lab?.firstBaseline ?: 0f)
+            val ty = baseline - text.firstBaseline
+            val ly = baseline - (lab?.firstBaseline ?: 0f)
             val rowH = maxOf(ty + text.size.height, if (lab != null) ly + lab.size.height else 0f)
             val textX = if (rtl) contentX else contentX + labelW
             val labelX = if (rtl) contentX + bodyW else contentX
@@ -226,6 +286,12 @@ private class Exporter(context: Context, private val pkg: DocxPackage, private v
             parts += Part(0f, y, Laid(rowH, floatArrayOf()) {
                 drawText(text, topLeft = Offset(textX, ty))
                 lab?.let { drawText(it, topLeft = Offset(labelX, ly)) }
+                for ((run, pic) in inlinePics) {
+                    val box = inlineBoxes[run] ?: continue
+                    val slot = inlineSlots[run - rangeBase] ?: continue
+                    val (ix, iy) = inlineSlotOffset(text, run - rangeBase, slot, rtl, 1f)
+                    drawPicture(pic, textX + ix, ty + iy, box, slot)
+                }
             })
             y += rowH
         }
@@ -247,18 +313,23 @@ private class Exporter(context: Context, private val pkg: DocxPackage, private v
         }
     }
 
-    /** A picture at its size in the document, aligned like [DocPicture], with 2 pt above and below. */
-    private fun picture(info: ObjInfo, lk: DocxLook, maxWidth: Float, paraAlign: TextAlign?, rtl: Boolean): Laid? {
+    /**
+     * A block picture at its size in the document, aligned like the editor, with 2 pt above and
+     * below. The slot reserves the rotated picture's visual box so the following text cannot run
+     * under a corner.
+     */
+    private fun picture(
+        info: ObjInfo,
+        lk: DocxLook,
+        maxWidth: Float,
+        maxHeight: Float,
+        paraAlign: TextAlign?,
+        rtl: Boolean
+    ): Laid? {
         val rid = info.imageRid ?: return null
-        val bytes = pkg.image(rid) ?: return null
-        val want = if (info.widthPt > 0f) info.widthPt * lk.scale else maxWidth
-        val w = want.coerceAtMost(maxWidth.coerceAtLeast(24f)).coerceAtLeast(12f)
-        // About 150 dpi: sharp in print without a camera photo's full weight.
-        val target = (w * 2.1f).roundToInt().coerceIn(64, 1800)
-        val pic = DocImages.decode("$rid@${System.identityHashCode(pkg)}@pdf$target", bytes, target)
-        val ratio = if (info.widthPt > 0f && info.heightPt > 0f) info.heightPt / info.widthPt
-        else pic?.image?.let { it.height.toFloat() / it.width.coerceAtLeast(1) } ?: 0.6f
-        val h = w * ratio.coerceIn(0.05f, 20f)
+        if (pkg.image(rid) == null) return null
+        val box = pictureBox(info, lk.scale, maxWidth, maxHeight)
+        val slot = DocxImageResize.slot(box.widthDp, box.heightDp, rotationDeg = info.rotationDeg)
         val start = when (info.hAlign) {
             "center" -> 0.5f
             "right", "outside" -> 1f
@@ -269,10 +340,38 @@ private class Exporter(context: Context, private val pkg: DocxPackage, private v
                 else -> 0f
             }
         }
-        val x = (maxWidth - w) * (if (rtl) 1f - start else start)
-        val bmp = pic?.image?.asAndroidBitmap()
-        return Laid(h + 4f, floatArrayOf()) {
-            if (bmp != null) drawIntoCanvas { it.nativeCanvas.drawBitmap(bmp, null, RectF(x, 2f, x + w, 2f + h), bitmapPaint) }
+        val x = (maxWidth - slot.widthDp) * (if (rtl) 1f - start else start)
+        return Laid(slot.heightDp + 4f, floatArrayOf()) {
+            drawPicture(info, x, 2f, box, slot)
+        }
+    }
+
+    /** Draws one decoded picture inside its slot, turned about its own centre. */
+    private fun DrawScope.drawPicture(
+        info: ObjInfo,
+        x: Float,
+        y: Float,
+        box: PictureBox,
+        slot: DocxImageResize.Slot
+    ) {
+        val rid = info.imageRid ?: return
+        val bytes = pkg.image(rid) ?: return
+        // About 150 dpi: sharp in print without a camera photo's full weight.
+        val target = (box.widthDp * 2.1f).roundToInt().coerceIn(64, 1800)
+        val pic = DocImages.decode("$rid@${System.identityHashCode(pkg)}@pdf$target", bytes, target)
+        val bmp = pic?.image?.asAndroidBitmap() ?: return
+        val left = x + slot.drawLeftDp
+        val top = y + slot.drawTopDp
+        val pivot = Offset(left + box.widthDp / 2f, top + box.heightDp / 2f)
+        rotate(info.rotationDeg, pivot = pivot) {
+            drawIntoCanvas {
+                it.nativeCanvas.drawBitmap(
+                    bmp,
+                    null,
+                    RectF(left, top, left + box.widthDp, top + box.heightDp),
+                    bitmapPaint
+                )
+            }
         }
     }
 

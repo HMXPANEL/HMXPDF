@@ -1,6 +1,7 @@
 package com.hmx.pdf.docx
 
 import java.util.Locale
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToLong
 
@@ -283,6 +284,56 @@ object DocxImageResize {
     }
 
     data class Size(val widthDp: Float, val heightDp: Float)
+
+    /** A live resize preview: the size the drag would commit and the corner that drives it. */
+    data class Preview(val size: Size, val corner: Corner)
+
+    /**
+     * The space a picture takes in its paragraph: the union of the committed and preview visual
+     * boxes, plus where the unrotated picture is drawn inside it. The union is what keeps a rotated
+     * or dragged picture from spilling over the text around it; the draw offset keeps the preview
+     * anchored to the opposite corner without moving the slot itself.
+     */
+    data class Slot(
+        val widthDp: Float,
+        val heightDp: Float,
+        val drawLeftDp: Float,
+        val drawTopDp: Float
+    )
+
+    fun slot(
+        startWidthDp: Float,
+        startHeightDp: Float,
+        shownWidthDp: Float = startWidthDp,
+        shownHeightDp: Float = startHeightDp,
+        rotationDeg: Float = 0f,
+        previewX: Float = 0f,
+        previewY: Float = 0f
+    ): Slot {
+        if (!startWidthDp.isFinite() || !startHeightDp.isFinite() || startWidthDp <= 0f || startHeightDp <= 0f) {
+            val w = shownWidthDp.takeIf { it.isFinite() && it > 0f } ?: 1f
+            val h = shownHeightDp.takeIf { it.isFinite() && it > 0f } ?: 1f
+            return Slot(w, h, 0f, 0f)
+        }
+        val w = shownWidthDp.takeIf { it.isFinite() && it > 0f } ?: startWidthDp
+        val h = shownHeightDp.takeIf { it.isFinite() && it > 0f } ?: startHeightDp
+        val (startW, startH) = DocxImageRotation.bounds(startWidthDp, startHeightDp, rotationDeg)
+        val (shownW, shownH) = DocxImageRotation.bounds(w, h, rotationDeg)
+        val startLeft = (startWidthDp - startW) / 2f
+        val startTop = (startHeightDp - startH) / 2f
+        val previewLeft = previewX + (w - shownW) / 2f
+        val previewTop = previewY + (h - shownH) / 2f
+        val left = min(startLeft, previewLeft)
+        val top = min(startTop, previewTop)
+        val right = max(startLeft + startW, previewLeft + shownW)
+        val bottom = max(startTop + startH, previewTop + shownH)
+        return Slot(
+            widthDp = max(right - left, 1f),
+            heightDp = max(bottom - top, 1f),
+            drawLeftDp = previewX - left,
+            drawTopDp = previewY - top
+        )
+    }
 
     fun drag(
         startWidthDp: Float,

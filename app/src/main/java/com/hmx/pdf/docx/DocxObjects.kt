@@ -12,7 +12,9 @@ class ObjInfo(
     /** A floating picture's horizontal alignment ("left", "center", "right"), when it gives one. */
     val hAlign: String? = null,
     /** Clockwise rotation in degrees, normalized to [0, 360). */
-    val rotationDeg: Float = 0f
+    val rotationDeg: Float = 0f,
+    /** Inline/anchor and wrap metadata, preserved even when the editor approximates it. */
+    val layout: DocxPictureLayout = DocxPictureLayout()
 )
 
 object DocxObjects {
@@ -36,11 +38,13 @@ object DocxObjects {
             w = (e.attr(obj, "cx")?.toFloatOrNull() ?: 0f) / 12700f
             h = (e.attr(obj, "cy")?.toFloatOrNull() ?: 0f) / 12700f
         }
+        var vmlStyle: String? = null
         if (rid == null) {
             // Legacy VML picture: <v:imagedata r:id> inside a shape sized by its CSS style.
             root.descendant("imagedata")?.let { img ->
                 rid = img.attr(obj, "id")
                 val style = generateSequence(img.parent) { it.parent }.firstNotNullOfOrNull { it.attr(obj, "style") } ?: ""
+                vmlStyle = style
                 w = cssPt(style, "width")
                 h = cssPt(style, "height")
                 rotation = cssRotation(style)
@@ -48,9 +52,54 @@ object DocxObjects {
         }
         val txbx = root.descendant("txbxContent")
         val text = if (txbx != null) DocxReader.Ctx(obj).container(txbx.children, readOnly = true) else emptyList()
-        val hAlign = root.descendant("positionH")?.child("align")?.let { XmlScan.unescape(it.inner(obj)).trim() }
-        return ObjInfo(rid, w, h, text, isPageBreak(obj), hAlign, DocxImageRotation.normalize(rotation))
+
+        val anchor = root.descendant("anchor")
+        val style = vmlStyle ?: ""
+        val vmlFloating = style.isNotEmpty() && (
+            cssValue(style, "position")?.equals("absolute", ignoreCase = true) == true ||
+                cssValue(style, "mso-position-horizontal") != null ||
+                cssValue(style, "mso-position-vertical") != null
+            )
+        var hAlign = root.descendant("positionH")?.child("align")?.let { XmlScan.unescape(it.inner(obj)).trim() }
+        if (hAlign == null) hAlign = cssValue(style, "mso-position-horizontal")
+        val wrap = when {
+            anchor?.child("wrapTopAndBottom") != null -> DocxWrapType.TOP_AND_BOTTOM
+            anchor?.child("wrapSquare") != null -> DocxWrapType.SQUARE
+            anchor?.child("wrapTight") != null -> DocxWrapType.TIGHT
+            anchor?.child("wrapThrough") != null -> DocxWrapType.THROUGH
+            anchor?.child("wrapNone") != null -> DocxWrapType.NONE
+            vmlFloating -> when (cssValue(style, "mso-wrap-style")?.lowercase()) {
+                "tight" -> DocxWrapType.TIGHT
+                "through" -> DocxWrapType.THROUGH
+                "top-and-bottom" -> DocxWrapType.TOP_AND_BOTTOM
+                "none" -> DocxWrapType.NONE
+                else -> DocxWrapType.SQUARE
+            }
+            else -> DocxWrapType.NONE
+        }
+        val effect = root.descendant("effectExtent")?.let { e ->
+            DocxEffectExtent(
+                leftPt = emuPt(e.attr(obj, "l")),
+                topPt = emuPt(e.attr(obj, "t")),
+                rightPt = emuPt(e.attr(obj, "r")),
+                bottomPt = emuPt(e.attr(obj, "b"))
+            )
+        } ?: DocxEffectExtent()
+        val layout = DocxPictureLayout(
+            inline = anchor == null && !vmlFloating,
+            wrap = wrap,
+            behindDoc = anchor?.attr(obj, "behindDoc") == "1" || anchor?.attr(obj, "behindDoc") == "true",
+            allowOverlap = anchor?.attr(obj, "allowOverlap") != "0",
+            layoutInCell = anchor?.attr(obj, "layoutInCell") != "0",
+            effect = effect
+        )
+        return ObjInfo(rid, w, h, text, isPageBreak(obj), hAlign, DocxImageRotation.normalize(rotation), layout)
     }
+
+    private fun emuPt(v: String?): Float = (v?.toFloatOrNull() ?: 0f) / 12700f
+
+    private fun cssValue(style: String, key: String): String? =
+        Regex("(?:^|;)\\s*${Regex.escape(key)}\\s*:\\s*([^;]+)").find(style)?.groupValues?.get(1)?.trim()
 
     private fun cssPt(style: String, key: String): Float {
         val m = Regex("(?:^|;)\\s*$key\\s*:\\s*([0-9.]+)\\s*(pt|px|in|cm|mm)?").find(style) ?: return 0f

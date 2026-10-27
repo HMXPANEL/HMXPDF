@@ -729,7 +729,7 @@ private fun DocxEditorContent(
     }
 
     fun enterEdit() {
-        viewModel.setEditMode(true)
+        viewModel.setEditing(true)
         selectedImage = null
         insertionPoint = null
         showImageSize = false
@@ -748,7 +748,7 @@ private fun DocxEditorContent(
         insertionPoint = null
         showImageSize = false
         imageSizeTarget = null
-        viewModel.setEditMode(false)
+        viewModel.setEditing(false)
     }
 
     // Any mode change (Done, back, a reloaded document) must drop picture-only state.

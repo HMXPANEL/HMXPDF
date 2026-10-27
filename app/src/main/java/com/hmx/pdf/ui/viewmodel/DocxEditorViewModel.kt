@@ -82,7 +82,7 @@ class DocxEditorViewModel : ViewModel() {
     var editMode by mutableStateOf(false)
         private set
 
-    fun setEditMode(on: Boolean) {
+    fun setEditing(on: Boolean) {
         if (editMode == on) return
         editMode = on
     }

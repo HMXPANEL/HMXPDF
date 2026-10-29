@@ -65,7 +65,7 @@ class DocxPackage(
         addedMedia[path] = bytes
         addedRels[id] = IMAGE_REL to
             (if (dir.isNotEmpty() && path.startsWith("$dir/")) path.removePrefix("$dir/") else "/$path")
-        addedDefaults.putIfAbsent(ext, contentType)
+        if (!addedDefaults.containsKey(ext)) addedDefaults[ext] = contentType
         return id
     }
 

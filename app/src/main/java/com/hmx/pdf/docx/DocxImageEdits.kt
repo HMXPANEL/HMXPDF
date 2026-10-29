@@ -98,6 +98,114 @@ object DocxImageEdits {
         return p.edited(fmts = fmts)
     }
 
+    /** The largest picture file a low-RAM phone should pull into a document. */
+    const val MAX_IMAGE_BYTES = 25 * 1024 * 1024
+
+    /** Reads a picked picture, refusing oversized or empty streams instead of filling the heap. */
+    fun readImage(input: java.io.InputStream, maxBytes: Int = MAX_IMAGE_BYTES): ByteArray? {
+        val out = java.io.ByteArrayOutputStream()
+        val buf = ByteArray(64 * 1024)
+        var total = 0
+        while (true) {
+            val n = input.read(buf)
+            if (n < 0) break
+            if (n == 0) continue
+            total += n
+            if (total > maxBytes) return null
+            out.write(buf, 0, n)
+        }
+        return out.toByteArray().takeIf { it.isNotEmpty() }
+    }
+
+    /** An image format this editor can safely add to a DOCX package. */
+    data class ImageFormat(val extension: String, val contentType: String)
+
+    /** Detects a supported format from its magic bytes; null for anything Word may not render. */
+    fun formatOf(bytes: ByteArray): ImageFormat? {
+        fun at(i: Int): Int = bytes.getOrNull(i)?.toInt()?.and(0xFF) ?: -1
+        fun ascii(from: Int, text: String): Boolean =
+            text.indices.all { at(from + it) == text[it].code }
+        return when {
+            at(0) == 0x89 && at(1) == 0x50 && at(2) == 0x4E && at(3) == 0x47 &&
+                at(4) == 0x0D && at(5) == 0x0A && at(6) == 0x1A && at(7) == 0x0A ->
+                ImageFormat("png", "image/png")
+            at(0) == 0xFF && at(1) == 0xD8 && at(2) == 0xFF ->
+                ImageFormat("jpg", "image/jpeg")
+            ascii(0, "GIF87a") || ascii(0, "GIF89a") ->
+                ImageFormat("gif", "image/gif")
+            at(0) == 0x42 && at(1) == 0x4D ->
+                ImageFormat("bmp", "image/bmp")
+            else -> null
+        }
+    }
+
+    /**
+     * Replaces the picture's relationship and, when a size is supplied, its extent. Everything
+     * else — paragraph position, anchor, wrap, alignment and rotation — stays in the run XML.
+     */
+    fun replace(
+        p: DocPara,
+        run: Int,
+        rid: String,
+        widthPt: Float? = null,
+        heightPt: Float? = null,
+        maxWidthPt: Float = 2000f,
+        maxHeightPt: Float = 2000f
+    ): DocPara? {
+        val f = imageRun(p, run) ?: return null
+        var obj = withImageRid(f.obj ?: return null, rid) ?: return null
+        if (widthPt != null && heightPt != null) {
+            if (!widthPt.isFinite() || !heightPt.isFinite() || widthPt <= 0f || heightPt <= 0f) return null
+            val (w, h) = fit(widthPt, heightPt, maxWidthPt, maxHeightPt)
+            obj = rewriteSize(obj, w, h) ?: return null
+        }
+        if (obj == f.obj) return p
+        val fmts = p.fmts.toMutableList().also { it[run] = f.copy(obj = obj) }
+        return p.edited(fmts = fmts)
+    }
+
+    /** Points a DrawingML or VML picture at [rid] without touching any other attribute. */
+    fun withImageRid(obj: String, rid: String): String? {
+        if (rid.isBlank()) return null
+        val root = XmlScan.scan(obj)
+        val edits = ArrayList<Triple<Int, Int, String>>()
+        root.descendant("blip")?.let { n ->
+            val tag = obj.substring(n.start, n.startTagEnd)
+            val name = when {
+                XmlScan.attr(tag, "embed") != null -> "embed"
+                XmlScan.attr(tag, "link") != null -> "link"
+                else -> null
+            }
+            if (name != null) edits.add(Triple(n.start, n.startTagEnd, setLocalAttr(tag, name, rid)))
+        }
+        root.descendant("imagedata")?.let { n ->
+            val tag = obj.substring(n.start, n.startTagEnd)
+            if (XmlScan.attr(tag, "id") != null) {
+                edits.add(Triple(n.start, n.startTagEnd, setLocalAttr(tag, "id", rid)))
+            }
+        }
+        if (edits.isEmpty()) return null
+        return applyEdits(obj, edits)
+    }
+
+    /**
+     * The new picture's display size: the largest box with [imageWidth] × [imageHeight]'s aspect
+     * ratio that fits inside the old picture box. The old box is kept when the ratios match.
+     */
+    fun fitReplacement(
+        boxWidthPt: Float,
+        boxHeightPt: Float,
+        imageWidth: Int,
+        imageHeight: Int
+    ): Pair<Float, Float> {
+        if (!boxWidthPt.isFinite() || !boxHeightPt.isFinite() || boxWidthPt <= 0f || boxHeightPt <= 0f ||
+            imageWidth <= 0 || imageHeight <= 0
+        ) return (boxWidthPt.takeIf { it.isFinite() && it > 0f } ?: 1f) to
+            (boxHeightPt.takeIf { it.isFinite() && it > 0f } ?: 1f)
+        val scale = min(boxWidthPt / imageWidth, boxHeightPt / imageHeight)
+        return (imageWidth * scale).coerceAtLeast(1f) to (imageHeight * scale).coerceAtLeast(1f)
+    }
+
     /** Scales [widthPt] × [heightPt] down until it fits both limits, keeping the aspect ratio. */
     fun fit(widthPt: Float, heightPt: Float, maxWidthPt: Float, maxHeightPt: Float = 2000f): Pair<Float, Float> {
         if (!widthPt.isFinite() || !heightPt.isFinite()) return 1f to 1f
@@ -216,6 +324,17 @@ object DocxImageEdits {
         return (if (units < 0L) units + 21600000L else units).toString()
     }
 
+    /** Replaces an attribute by local name (`r:embed` matches `embed`), adding it when absent. */
+    private fun setLocalAttr(tag: String, name: String, value: String): String {
+        val re = Regex("""(\s(?:[A-Za-z0-9_]+:)?${Regex.escape(name)}\s*=\s*)(["'])[^"']*\2""")
+        if (re.containsMatchIn(tag)) {
+            return re.replace(tag) { m -> m.groupValues[1] + m.groupValues[2] + value + m.groupValues[2] }
+        }
+        val close = if (tag.endsWith("/>")) tag.length - 2 else tag.length - 1
+        if (close < 0) return tag
+        return tag.substring(0, close).trimEnd() + " $name=\"$value\"" + tag.substring(close)
+    }
+
     /** Replaces an attribute in one start tag, adding it when absent. */
     private fun setAttr(tag: String, name: String, value: String): String {
         // Require whitespace before the name so r:id is never mistaken for id.
@@ -266,21 +385,36 @@ object DocxImageEdits {
 }
 
 /**
- * Pure corner-drag geometry, in display dp, shared by the editor and its tests. The drag is always
- * measured from the size at gesture start, so a long drag never accumulates per-frame rounding.
- * Corner drags keep the picture's aspect ratio; the dominant axis decides the scale, which makes a
- * mostly-vertical drag on a wide picture behave like Word instead of doing nothing.
+ * Pure resize-handle geometry, in display dp, shared by the editor and its tests. The drag is
+ * always measured from the size at gesture start, so a long drag never accumulates per-frame
+ * rounding. Corner handles keep the picture's aspect ratio; edge handles change one axis. For
+ * corners the dominant axis decides the scale, which makes a mostly-vertical drag on a wide
+ * picture behave like Word instead of doing nothing.
  */
 object DocxImageResize {
 
-    /** The smallest picture the corner handles will produce. */
+    /** The smallest picture width, or uniform-scale width, the handles will produce. */
     const val MIN_DP = 48f
 
-    enum class Corner(val startsLeft: Boolean, val startsTop: Boolean) {
+    /**
+     * A resize handle. Corners change both axes and keep the aspect ratio; the four edge
+     * midpoints change only their own axis. [horizontal]/[vertical] say which axes the handle
+     * drives, so the same drag and preview math serves all eight.
+     */
+    enum class Corner(
+        val startsLeft: Boolean,
+        val startsTop: Boolean,
+        val horizontal: Boolean = true,
+        val vertical: Boolean = true
+    ) {
         TOP_START(true, true),
         TOP_END(false, true),
         BOTTOM_START(true, false),
-        BOTTOM_END(false, false)
+        BOTTOM_END(false, false),
+        TOP(true, true, horizontal = false),
+        BOTTOM(true, false, horizontal = false),
+        LEFT(true, true, vertical = false),
+        RIGHT(false, true, vertical = false)
     }
 
     data class Size(val widthDp: Float, val heightDp: Float)
@@ -348,6 +482,9 @@ object DocxImageResize {
         if (startWidthDp <= 0f || startHeightDp <= 0f || !startWidthDp.isFinite() || !startHeightDp.isFinite()) {
             return Size(minDp, minDp)
         }
+        if (!corner.horizontal || !corner.vertical) {
+            return dragEdge(startWidthDp, startHeightDp, dxDp, dyDp, corner, maxWidthDp, maxHeightDp, minDp)
+        }
         val signX = if (corner.startsLeft) -1f else 1f
         val signY = if (corner.startsTop) -1f else 1f
         val sx = (startWidthDp + signX * dxDp) / startWidthDp
@@ -364,9 +501,35 @@ object DocxImageResize {
     }
 
     /**
-     * Corner drag for a picture drawn at [rotationDeg]. [dxDp] and [dyDp] are pointer movement in
-     * screen axes; they are mapped into the picture's own axes and projected onto the dragged
-     * diagonal, so the opposite corner stays fixed and the picture grows outward at any angle.
+     * An edge drag changes only its own dimension; the opposite edge stays fixed. The minimum
+     * height follows the same effective floor as a corner drag (the height at which a uniformly
+     * scaled picture is [minDp] wide), so a small picture is never forced to jump larger.
+     */
+    private fun dragEdge(
+        startWidthDp: Float,
+        startHeightDp: Float,
+        dxDp: Float,
+        dyDp: Float,
+        corner: Corner,
+        maxWidthDp: Float,
+        maxHeightDp: Float,
+        minDp: Float
+    ): Size {
+        val signX = if (corner.startsLeft) -1f else 1f
+        val signY = if (corner.startsTop) -1f else 1f
+        val minW = minOf(minDp, startWidthDp).coerceAtLeast(1f)
+        val minH = minOf(minDp * startHeightDp / startWidthDp, startHeightDp).coerceAtLeast(1f)
+        val maxW = maxOf(minW, startWidthDp, if (maxWidthDp.isFinite()) maxWidthDp else Float.MAX_VALUE)
+        val maxH = maxOf(minH, startHeightDp, if (maxHeightDp.isFinite()) maxHeightDp else Float.MAX_VALUE)
+        val w = if (corner.horizontal) (startWidthDp + signX * dxDp).coerceIn(minW, maxW) else startWidthDp
+        val h = if (corner.vertical) (startHeightDp + signY * dyDp).coerceIn(minH, maxH) else startHeightDp
+        return Size(w, h)
+    }
+
+    /**
+     * Drag for a picture drawn at [rotationDeg]. [dxDp] and [dyDp] are pointer movement in screen
+     * axes; they are mapped into the picture's own axes and projected onto the dragged diagonal
+     * (corners) or edge normal (edges), so the opposite corner or edge stays fixed at any angle.
      * Unrotated pictures keep the exact previous behaviour of [drag].
      */
     fun dragRotated(
@@ -388,6 +551,21 @@ object DocxImageResize {
             return Size(minDp, minDp)
         }
         val (localX, localY) = DocxImageRotation.rotate(dxDp, dyDp, -rotation)
+        if (!corner.horizontal || !corner.vertical) {
+            val minW = minOf(minDp, startWidthDp).coerceAtLeast(1f)
+            val minH = minOf(minDp * startHeightDp / startWidthDp, startHeightDp).coerceAtLeast(1f)
+            val maxW = maxOf(minW, startWidthDp, if (maxWidthDp.isFinite()) maxWidthDp else Float.MAX_VALUE)
+            val maxH = maxOf(minH, startHeightDp, if (maxHeightDp.isFinite()) maxHeightDp else Float.MAX_VALUE)
+            val w = if (corner.horizontal) {
+                val qx = (if (corner.startsLeft) -1f else 1f) * startWidthDp / 2f
+                (startWidthDp * (1f + localX / qx)).coerceIn(minW, maxW)
+            } else startWidthDp
+            val h = if (corner.vertical) {
+                val qy = (if (corner.startsTop) -1f else 1f) * startHeightDp / 2f
+                (startHeightDp * (1f + localY / qy)).coerceIn(minH, maxH)
+            } else startHeightDp
+            return Size(w, h)
+        }
         val signX = if (corner.startsLeft) -1f else 1f
         val signY = if (corner.startsTop) -1f else 1f
         // Offset of the dragged corner from the centre, in the picture's own axes.
@@ -432,13 +610,19 @@ object DocxImageResize {
             val y = if (corner.startsTop) startHeightDp - heightDp else 0f
             return x to y
         }
-        val signX = if (corner.startsLeft) -1f else 1f
-        val signY = if (corner.startsTop) -1f else 1f
         val sx = widthDp / startWidthDp
         val sy = heightDp / startHeightDp
-        // Opposite corner relative to the centre, in the picture's own axes.
-        val qx = -signX * startWidthDp / 2f
-        val qy = -signY * startHeightDp / 2f
+        // The opposite corner (corners) or opposite edge midpoint (edges), relative to the centre.
+        val qx = when {
+            !corner.horizontal -> 0f
+            corner.startsLeft -> startWidthDp / 2f
+            else -> -startWidthDp / 2f
+        }
+        val qy = when {
+            !corner.vertical -> 0f
+            corner.startsTop -> startHeightDp / 2f
+            else -> -startHeightDp / 2f
+        }
         val (dx, dy) = DocxImageRotation.rotate(qx - sx * qx, qy - sy * qy, rotation)
         val baseX = when {
             endAligned -> startWidthDp - widthDp
@@ -450,10 +634,7 @@ object DocxImageResize {
     }
 }
 
-/**
- * Angle math for free rotation, in degrees, clockwise on screen (y grows down). Every gesture is
- * accumulated from shortest signed deltas, so crossing the ±180° seam never flips the picture.
- */
+/** Angle math for picture rotation, in degrees, clockwise on screen (y grows down). */
 object DocxImageRotation {
 
     fun normalize(degrees: Float): Float {
@@ -471,10 +652,6 @@ object DocxImageRotation {
         return d
     }
 
-    /** Pointer angle around a centre; 0° points right, 90° points down. */
-    fun pointerAngle(centerX: Float, centerY: Float, x: Float, y: Float): Float =
-        Math.toDegrees(kotlin.math.atan2(y - centerY, x - centerX).toDouble()).toFloat()
-
     fun rotate(x: Float, y: Float, degrees: Float): Pair<Float, Float> {
         val r = Math.toRadians(degrees.toDouble())
         val c = kotlin.math.cos(r).toFloat()
@@ -489,27 +666,12 @@ object DocxImageRotation {
         val s = kotlin.math.abs(kotlin.math.sin(r)).toFloat()
         return (width * c + height * s) to (width * s + height * c)
     }
-
-    /** Mutable gesture accumulator: one instance per press, never stored in the document. */
-    class Session(startDegrees: Float, pointerAngle: Float) {
-        private var last = pointerAngle
-        var degrees: Float = DocxImageRotation.normalize(startDegrees)
-            private set
-
-        fun moveTo(pointerAngle: Float): Float {
-            degrees = DocxImageRotation.normalize(
-                degrees + DocxImageRotation.delta(last, pointerAngle)
-            )
-            last = pointerAngle
-            return degrees
-        }
-    }
 }
 
 /**
  * Placement geometry for the floating picture chrome, in one coordinate space (the editor root).
- * The toolbar prefers the space below the picture; above is only used when the rotation grip can
- * keep its own reserved band. Everything is clamped to the visible viewport.
+ * The toolbar prefers the space below the picture, falls back above when there is no room, and is
+ * always clamped to the visible viewport.
  */
 object DocxImageOverlay {
 
@@ -542,15 +704,12 @@ object DocxImageOverlay {
         toolbarHeight: Float,
         viewport: Bounds,
         gap: Float = 8f,
-        belowReserve: Float = 0f,
-        handleReserve: Float = 52f,
-        handle: Bounds? = null
+        belowReserve: Float = 0f
     ): Placement? {
         if (toolbarWidth <= 0f || toolbarHeight <= 0f || viewport.width <= 0f || viewport.height <= 0f) return null
         if (!image.intersects(viewport)) return null
-        // Corner handles reach past the picture box; keep the toolbar clear of them.
         val below = image.bottom + gap + belowReserve
-        val above = image.top - gap - toolbarHeight - handleReserve
+        val above = image.top - gap - toolbarHeight
         val fitsBelow = below + toolbarHeight <= viewport.bottom
         val fitsAbove = above >= viewport.top
         val left = ((image.left + image.right) / 2f - toolbarWidth / 2f).coerceIn(
@@ -562,31 +721,13 @@ object DocxImageOverlay {
             top.coerceIn(viewport.top, (viewport.bottom - toolbarHeight).coerceAtLeast(viewport.top)),
             top + toolbarHeight <= image.top
         )
-        fun overlaps(p: Placement): Boolean = handle != null &&
-            p.left < handle.right && p.left + toolbarWidth > handle.left &&
-            p.top < handle.bottom && p.top + toolbarHeight > handle.top
         val belowPlacement = at(below)
         val abovePlacement = at(above)
-        val belowOk = fitsBelow && !overlaps(belowPlacement)
-        val aboveOk = fitsAbove && !overlaps(abovePlacement)
         return when {
-            belowOk -> belowPlacement
-            aboveOk -> abovePlacement
             fitsBelow -> belowPlacement
             fitsAbove -> abovePlacement
             (viewport.bottom - image.bottom) >= (image.top - viewport.top) -> belowPlacement
             else -> abovePlacement
         }
-    }
-
-    /**
-     * The rotation grip's top-left, attached to the picture's top-centre and carried around by
-     * [degrees]. The caller clamps it to the viewport so it can never be clipped.
-     */
-    fun rotationHandle(image: Bounds, degrees: Float, size: Float, gap: Float = 10f): Placement {
-        val (x, y) = DocxImageRotation.rotate(0f, -(image.height / 2f + gap + size / 2f), degrees)
-        val cx = (image.left + image.right) / 2f
-        val cy = (image.top + image.bottom) / 2f
-        return Placement(cx + x - size / 2f, cy + y - size / 2f, false)
     }
 }

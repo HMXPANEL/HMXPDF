@@ -23,19 +23,55 @@ class DocxPackage(
     val numberingPath: String,
     val theme: DocxTheme,
     /** Relationship id → zip entry path (internal targets only). */
-    val rels: Map<String, String>,
+    val rels: MutableMap<String, String>,
     /** Relationship id → URL, for hyperlinks. */
     val links: Map<String, String>,
     val relsPath: String,
     val relsXml: String?,
     val contentTypes: String?,
     /** Zip entry path → bytes, for pictures. */
-    val media: Map<String, ByteArray>,
+    val media: MutableMap<String, ByteArray>,
     val page: PageSetup,
     /** False for documents this editor can show but can't safely write (Strict OOXML, odd prefixes). */
-    val writable: Boolean
+    val writable: Boolean,
+    /** Media parts added by an edit; written by [DocxWriter] even though the source lacks them. */
+    val addedMedia: MutableMap<String, ByteArray> = LinkedHashMap(),
+    /** Relationship id → (type, target) for relationships added by an edit. */
+    val addedRels: MutableMap<String, Pair<String, String>> = LinkedHashMap(),
+    /** Default extension → content type for `[Content_Types].xml` additions. */
+    val addedDefaults: MutableMap<String, String> = LinkedHashMap()
 ) {
     fun image(rid: String): ByteArray? = rels[rid]?.let { media[it] }
+
+    /**
+     * Adds a picture part and its relationship, returning the new relationship id. The original
+     * media is never overwritten: another picture may point at the same file, and undo still needs
+     * the old bytes. Null when this package cannot take a new part safely.
+     */
+    fun addImage(extension: String, contentType: String, bytes: ByteArray): String? {
+        if (bytes.isEmpty() || contentTypes == null) return null
+        val ext = extension.lowercase().removePrefix(".")
+            .takeIf { it.matches(Regex("[a-z0-9]{1,8}")) } ?: return null
+        val dir = mainPath.substringBeforeLast('/', "")
+        val prefix = if (dir.isEmpty()) "" else "$dir/"
+        var n = 1
+        var path: String
+        do { path = "${prefix}media/hmxImage$n.$ext"; n++ } while (media.containsKey(path) || addedMedia.containsKey(path))
+        var id: String
+        var r = 1
+        do { id = "rIdHmx$r"; r++ } while (rels.containsKey(id) || addedRels.containsKey(id) || links.containsKey(id))
+        media[path] = bytes
+        rels[id] = path
+        addedMedia[path] = bytes
+        addedRels[id] = IMAGE_REL to
+            (if (dir.isNotEmpty() && path.startsWith("$dir/")) path.removePrefix("$dir/") else "/$path")
+        addedDefaults.putIfAbsent(ext, contentType)
+        return id
+    }
+
+    private companion object {
+        const val IMAGE_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
+    }
 }
 
 /**
@@ -72,7 +108,7 @@ object DocxReader {
         val relsPath = (if (dir.isEmpty()) "" else "$dir/") + "_rels/" + mainPath.substringAfterLast('/') + ".rels"
         val relsXml = parts[relsPath]
         val rels = relsXml?.let { relsOf(it, dir) } ?: emptyList()
-        val relMap = rels.filter { !it.external }.associate { it.id to it.target }
+        val relMap = rels.filter { !it.external }.associate { it.id to it.target }.toMutableMap()
         val stylesPath = rels.firstOrNull { it.type.endsWith("/styles") }?.target ?: join(dir, "styles.xml")
         val numberingPath = rels.firstOrNull { it.type.endsWith("/numbering") }?.target ?: join(dir, "numbering.xml")
         val themePath = rels.firstOrNull { it.type.endsWith("/theme") }?.target

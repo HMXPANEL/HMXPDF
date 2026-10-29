@@ -357,6 +357,41 @@ class DocxEditorViewModel : ViewModel() {
         return true
     }
 
+    /**
+     * Replaces one picture's bytes. A new media part and relationship are added, so a picture that
+     * shares the old media is untouched; the run keeps its position, anchor, wrap and rotation.
+     * The new picture is fitted inside the old box with its own aspect ratio. One undo step.
+     */
+    fun replaceImage(
+        id: Long,
+        run: Int,
+        bytes: ByteArray,
+        maxWidthPt: Float,
+        maxHeightPt: Float = 2000f
+    ): Boolean {
+        if (!canEditImages()) return false
+        if (bytes.isEmpty() || bytes.size > DocxImageEdits.MAX_IMAGE_BYTES) return false
+        val packageNow = pkg ?: return false
+        val d = doc ?: return false
+        val p = findPara(d.blocks, id) ?: return false
+        if (!p.editable) return false
+        val old = DocxImageEdits.size(p, run) ?: return false
+        val format = DocxImageEdits.formatOf(bytes) ?: return false
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return false
+        val (w, h) = DocxImageEdits.fitReplacement(old.first, old.second, bounds.outWidth, bounds.outHeight)
+        // Validate the run rewrite before adding a part, so a failure leaves no orphan media.
+        if (DocxImageEdits.replace(p, run, "rIdHmxProbe", w, h, maxWidthPt, maxHeightPt) == null) return false
+        val rid = packageNow.addImage(format.extension, format.contentType, bytes) ?: return false
+        val np = DocxImageEdits.replace(p, run, rid, w, h, maxWidthPt, maxHeightPt) ?: return false
+        if (np === p) return true
+        val blocks = replacePara(d.blocks, np) ?: return false
+        lastKey = null
+        commit(DocState(blocks), relayout = true)
+        return true
+    }
+
     /** Commits one clockwise rotation, in degrees, as a single undo step. */
     fun rotateImage(id: Long, run: Int, degrees: Float): Boolean {
         if (!canEditImages()) return false

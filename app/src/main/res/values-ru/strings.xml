@@ -134,6 +134,7 @@
     <string name="image_tools_quality">Качество</string>
     <string name="image_tools_resize">Изменение размера</string>
     <string name="image_tools_rotate">Повернуть</string>
+    <string name="image_tools_replace">Заменить</string>
     <string name="image_rotate_ccw">90° влево</string>
     <string name="image_rotate_cw">90° вправо</string>
     <string name="image_rotate_reset">Сбросить</string>

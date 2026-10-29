@@ -70,6 +70,9 @@ object DocxWriter {
                 types = addOverride(types, "/" + pkg.stylesPath, "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml")
             }
         }
+        for ((id, rel) in pkg.addedRels) rels = addRel(rels, rel.first, rel.second, id)
+        for ((ext, type) in pkg.addedDefaults) types = addDefault(types, ext, type)
+        add.putAll(pkg.addedMedia)
         if (rels != pkg.relsXml && rels != null) {
             if (pkg.relsXml != null) replace[pkg.relsPath] = rels.toByteArray(Charsets.UTF_8) else add[pkg.relsPath] = rels.toByteArray(Charsets.UTF_8)
         }
@@ -89,13 +92,16 @@ object DocxWriter {
         return xml.substring(0, absAt) + abstracts + xml.substring(absAt, numAt) + nums + xml.substring(numAt)
     }
 
-    private fun addRel(rels: String?, type: String, target: String): String {
+    private fun addRel(rels: String?, type: String, target: String, id: String? = null): String {
         val base = rels ?: "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n" +
             "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"></Relationships>"
-        var n = 1
-        while (base.contains("Id=\"rIdCp$n\"")) n++
+        val rid = id ?: run {
+            var n = 1
+            while (base.contains("Id=\"rIdCp$n\"")) n++
+            "rIdCp$n"
+        }
         val close = base.lastIndexOf("</")
-        return base.substring(0, close) + "<Relationship Id=\"rIdCp$n\" Type=\"$type\" Target=\"$target\"/>" + base.substring(close)
+        return base.substring(0, close) + "<Relationship Id=\"$rid\" Type=\"$type\" Target=\"$target\"/>" + base.substring(close)
     }
 
     private fun addOverride(types: String?, partName: String, contentType: String): String? {
@@ -103,6 +109,15 @@ object DocxWriter {
         if (types.contains("PartName=\"$partName\"")) return types
         val close = types.lastIndexOf("</")
         return types.substring(0, close) + "<Override PartName=\"$partName\" ContentType=\"$contentType\"/>" + types.substring(close)
+    }
+
+    private fun addDefault(types: String?, extension: String, contentType: String): String? {
+        types ?: return null
+        if (Regex("""<Default\b[^>]*\bExtension\s*=\s*["']${Regex.escape(extension)}["']""", RegexOption.IGNORE_CASE)
+                .containsMatchIn(types)
+        ) return types
+        val close = types.lastIndexOf("</")
+        return types.substring(0, close) + "<Default Extension=\"$extension\" ContentType=\"$contentType\"/>" + types.substring(close)
     }
 
     private fun rewrite(input: InputStream, output: OutputStream, replace: Map<String, ByteArray>, add: Map<String, ByteArray>) {
@@ -116,7 +131,8 @@ object DocxWriter {
                 if (!seen.add(n)) continue
                 val out = ZipEntry(e.name).apply { if (e.time != -1L) time = e.time }
                 zout.putNextEntry(out)
-                val bytes = replace[n]
+                // An added part may already exist in a document saved by an older build.
+                val bytes = replace[n] ?: add[n]
                 if (bytes != null) zout.write(bytes)
                 else while (true) {
                     val k = zin.read(buf)

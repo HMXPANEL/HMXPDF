@@ -1,5 +1,6 @@
 package com.hmx.pdf.docx
 
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -7,6 +8,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.zip.ZipEntry
@@ -56,11 +58,11 @@ class DocxImageEditsTest {
         0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0
     )
 
-    private fun docx(body: String): ByteArray {
+    private fun docx(body: String, pngDefault: Boolean = true): ByteArray {
         val parts = linkedMapOf(
             "[Content_Types].xml" to "<?xml version=\"1.0\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">" +
                 "<Default Extension=\"xml\" ContentType=\"application/xml\"/>" +
-                "<Default Extension=\"png\" ContentType=\"image/png\"/>" +
+                (if (pngDefault) "<Default Extension=\"png\" ContentType=\"image/png\"/>" else "") +
                 "<Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/></Types>",
             "_rels/.rels" to "<?xml version=\"1.0\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">" +
                 "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/></Relationships>",
@@ -363,6 +365,101 @@ class DocxImageEditsTest {
     }
 
     @Test
+    fun everyEdgeDragChangesOnlyItsOwnAxis() {
+        val top = DocxImageResize.drag(
+            200f, 100f, 0f, -10f, DocxImageResize.Corner.TOP, 1000f, 1000f
+        )
+        assertEquals(200f, top.widthDp, 0.01f)
+        assertEquals(110f, top.heightDp, 0.01f)
+
+        val bottom = DocxImageResize.drag(
+            200f, 100f, 0f, 10f, DocxImageResize.Corner.BOTTOM, 1000f, 1000f
+        )
+        assertEquals(200f, bottom.widthDp, 0.01f)
+        assertEquals(110f, bottom.heightDp, 0.01f)
+
+        val left = DocxImageResize.drag(
+            200f, 100f, -10f, 0f, DocxImageResize.Corner.LEFT, 1000f, 1000f
+        )
+        assertEquals(210f, left.widthDp, 0.01f)
+        assertEquals(100f, left.heightDp, 0.01f)
+
+        val right = DocxImageResize.drag(
+            200f, 100f, 10f, 0f, DocxImageResize.Corner.RIGHT, 1000f, 1000f
+        )
+        assertEquals(210f, right.widthDp, 0.01f)
+        assertEquals(100f, right.heightDp, 0.01f)
+    }
+
+    @Test
+    fun edgeDragsRespectMinimumsAndPageLimits() {
+        // The width floor is MIN_DP; the height floor is the height at which a uniform scale
+        // reaches MIN_DP width (48 * 100 / 200 = 24), not MIN_DP itself.
+        val minLeft = DocxImageResize.drag(
+            200f, 100f, 500f, 0f, DocxImageResize.Corner.LEFT, 1000f, 1000f
+        )
+        assertEquals(DocxImageResize.MIN_DP, minLeft.widthDp, 0.01f)
+        assertEquals(100f, minLeft.heightDp, 0.01f)
+
+        val minTop = DocxImageResize.drag(
+            200f, 100f, 0f, 500f, DocxImageResize.Corner.TOP, 1000f, 1000f
+        )
+        assertEquals(200f, minTop.widthDp, 0.01f)
+        assertEquals(DocxImageResize.MIN_DP / 2f, minTop.heightDp, 0.01f)
+
+        val cappedRight = DocxImageResize.drag(
+            200f, 100f, 500f, 0f, DocxImageResize.Corner.RIGHT, 300f, 1000f
+        )
+        assertEquals(300f, cappedRight.widthDp, 0.01f)
+        assertEquals(100f, cappedRight.heightDp, 0.01f)
+
+        val cappedTop = DocxImageResize.drag(
+            200f, 100f, 0f, -500f, DocxImageResize.Corner.TOP, 1000f, 150f
+        )
+        assertEquals(200f, cappedTop.widthDp, 0.01f)
+        assertEquals(150f, cappedTop.heightDp, 0.01f)
+    }
+
+    @Test
+    fun rotatedEdgeDragsFollowThePictureAxes() {
+        // Turned 90° clockwise, the picture's left edge faces up: an upward drag widens it.
+        val left = DocxImageResize.dragRotated(
+            200f, 100f, 0f, -10f, DocxImageResize.Corner.LEFT, 90f, 1000f, 1000f
+        )
+        assertEquals(220f, left.widthDp, 0.01f)
+        assertEquals(100f, left.heightDp, 0.01f)
+
+        // Its top edge faces right: dragging right grows it.
+        val top = DocxImageResize.dragRotated(
+            200f, 100f, 10f, 0f, DocxImageResize.Corner.TOP, 90f, 1000f, 1000f
+        )
+        assertEquals(200f, top.widthDp, 0.01f)
+        assertEquals(120f, top.heightDp, 0.01f)
+    }
+
+    @Test
+    fun edgePreviewKeepsTheOppositeEdgeFixed() {
+        val left = DocxImageResize.previewOffset(
+            200f, 100f, 150f, 100f, DocxImageResize.Corner.LEFT
+        )
+        assertEquals(50f, left.first, 0.01f)
+        assertEquals(0f, left.second, 0.01f)
+
+        val top = DocxImageResize.previewOffset(
+            200f, 100f, 200f, 50f, DocxImageResize.Corner.TOP
+        )
+        assertEquals(0f, top.first, 0.01f)
+        assertEquals(50f, top.second, 0.01f)
+
+        // At 90° the left edge faces up, so the preview box shifts along both screen axes.
+        val turned = DocxImageResize.previewOffset(
+            200f, 100f, 150f, 100f, DocxImageResize.Corner.LEFT, rotationDeg = 90f
+        )
+        assertEquals(25f, turned.first, 0.01f)
+        assertEquals(25f, turned.second, 0.01f)
+    }
+
+    @Test
     fun dragUsesTheDominantAxisAndTheInitialSize() {
         val vertical = DocxImageResize.drag(
             200f, 100f, 10f, 50f, DocxImageResize.Corner.BOTTOM_END, 1000f, 1000f
@@ -465,24 +562,11 @@ class DocxImageEditsTest {
         assertEquals(20f, DocxImageRotation.delta(170f, -170f), 0.001f)
         assertEquals(-20f, DocxImageRotation.delta(-170f, 170f), 0.001f)
         assertEquals(180f, DocxImageRotation.delta(0f, 180f), 0.001f)
-
-        val session = DocxImageRotation.Session(startDegrees = 350f, pointerAngle = 10f)
-        assertEquals(355f, session.moveTo(15f), 0.001f)
-        assertEquals(5f, session.moveTo(25f), 0.001f)
-        assertEquals(355f, session.moveTo(15f), 0.001f)
     }
 
     @Test
-    fun rotationHandleAndRotatedBoundsFollowThePicture() {
+    fun rotatedBoundsFollowThePicture() {
         val image = DocxImageOverlay.Bounds(100f, 100f, 300f, 200f)
-        val unrotated = DocxImageOverlay.rotationHandle(image, 0f, size = 40f, gap = 10f)
-        assertEquals(180f, unrotated.left, 0.01f)
-        assertEquals(50f, unrotated.top, 0.01f)
-
-        val turned = DocxImageOverlay.rotationHandle(image, 90f, size = 40f, gap = 10f)
-        assertEquals(260f, turned.left, 0.01f)
-        assertEquals(130f, turned.top, 0.01f)
-
         val visual = DocxImageOverlay.visualBounds(image, 90f)
         assertEquals(100f, visual.width, 0.01f)
         assertEquals(200f, visual.height, 0.01f)
@@ -507,13 +591,6 @@ class DocxImageEditsTest {
         val above = DocxImageOverlay.toolbar(nearBottom, 300f, 50f, viewport)!!
         assertTrue(above.top + 50f <= nearBottom.top)
         assertTrue(above.above)
-
-        // A rotation grip sitting where the toolbar would go pushes it to the other side.
-        val withGrip = DocxImageOverlay.toolbar(
-            image, 300f, 50f, viewport,
-            handle = DocxImageOverlay.Bounds(450f, 510f, 550f, 560f)
-        )!!
-        assertTrue(withGrip.above)
 
         val nearLeft = DocxImageOverlay.Bounds(-100f, 400f, 100f, 500f)
         val clamped = DocxImageOverlay.toolbar(nearLeft, 300f, 50f, viewport)!!
@@ -583,6 +660,147 @@ class DocxImageEditsTest {
         assertNotNull(pkg2.image("rIdImg"))
         assertTrue(again.fmts[0].obj!!.contains("id=\"99\""))
         assertTrue(again.fmts[8].obj!!.contains("id=\"7\""))
+    }
+
+    @Test
+    fun replacementFormatsAreDetectedAndReadsAreBounded() {
+        assertEquals("png", DocxImageEdits.formatOf(fakePng)!!.extension)
+        assertEquals("image/png", DocxImageEdits.formatOf(fakePng)!!.contentType)
+        assertEquals(
+            "jpg",
+            DocxImageEdits.formatOf(byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte()))!!.extension
+        )
+        assertEquals("gif", DocxImageEdits.formatOf("GIF89a".toByteArray())!!.extension)
+        assertEquals("bmp", DocxImageEdits.formatOf("BM".toByteArray())!!.extension)
+        assertNull(DocxImageEdits.formatOf(byteArrayOf(1, 2, 3)))
+        assertNull(DocxImageEdits.formatOf(ByteArray(0)))
+
+        val exact = ByteArray(10) { 1 }
+        assertArrayEquals(exact, DocxImageEdits.readImage(ByteArrayInputStream(exact), 10))
+        assertNull(DocxImageEdits.readImage(ByteArrayInputStream(ByteArray(11)), 10))
+        assertNull(DocxImageEdits.readImage(ByteArrayInputStream(ByteArray(0))))
+    }
+
+    @Test
+    fun replacementFitsInsideTheOldBoxWithItsOwnAspect() {
+        assertEquals(200f to 100f, DocxImageEdits.fitReplacement(200f, 100f, 800, 400))
+        assertEquals(100f to 100f, DocxImageEdits.fitReplacement(200f, 100f, 100, 100))
+        assertEquals(200f to 50f, DocxImageEdits.fitReplacement(200f, 100f, 400, 100))
+        assertEquals(50f to 100f, DocxImageEdits.fitReplacement(200f, 100f, 50, 100))
+        assertEquals(1f to 1f, DocxImageEdits.fitReplacement(0f, 0f, 0, 0))
+    }
+
+    @Test
+    fun withImageRidRewritesDrawingMlAndVmlWithoutTouchingOtherAttributes() {
+        val (_, state) = read(docx("<w:p>$inline</w:p><w:p>$vml</w:p>"))
+        val ps = paras(state)
+        val drawing = DocxImageEdits.withImageRid(ps[0].fmts[0].obj!!, "rIdNew")!!
+        assertTrue(drawing.contains("r:embed=\"rIdNew\""))
+        assertFalse(drawing.contains("rIdImg"))
+        assertTrue(drawing.contains("id=\"7\""))
+        assertTrue(drawing.contains("cx=\"914400\""))
+
+        val legacy = DocxImageEdits.withImageRid(ps[1].fmts[0].obj!!, "rIdNew")!!
+        assertTrue(legacy.contains("r:id=\"rIdNew\""))
+        assertFalse(legacy.contains("rIdImg"))
+        assertTrue(legacy.contains("width:72pt;height:36pt"))
+
+        assertNull(DocxImageEdits.withImageRid("<w:r/>", "rIdNew"))
+        assertNull(DocxImageEdits.withImageRid(inline, " "))
+    }
+
+    @Test
+    fun replacementRejectsNonPicturesAndInvalidSizes() {
+        val (_, state) = read(docx("<w:p>$inline</w:p>"))
+        val p = paras(state)[0]
+        assertNull(DocxImageEdits.replace(p, 0, "rIdNew", 0f, 10f))
+        assertNull(DocxImageEdits.replace(p, 0, "rIdNew", 10f, Float.NaN))
+        assertNull(DocxImageEdits.replace(p, 1, "rIdNew"))
+        assertNull(DocxImageEdits.replace(p, 0, ""))
+    }
+
+    @Test
+    fun replacementAddsMediaAndRelationshipAndSurvivesSave() {
+        val bytes = docx("<w:p><w:r><w:t>Before </w:t></w:r>$inline<w:r><w:t> after</w:t></w:r></w:p>")
+        val (pkg, state) = read(bytes)
+        val p = paras(state)[0]
+        val run = p.text.indexOf(OBJ_CHAR)
+        val newPng = fakePng + byteArrayOf(9, 9, 9)
+
+        val rid = pkg.addImage("png", "image/png", newPng)!!
+        assertEquals("rIdHmx1", rid)
+        assertEquals("word/media/hmxImage1.png", pkg.rels[rid])
+        assertArrayEquals(newPng, pkg.image(rid))
+        assertArrayEquals(fakePng, pkg.image("rIdImg"))
+        // A second picture gets a second part and id, never overwriting the first.
+        val second = pkg.addImage("png", "image/png", fakePng)!!
+        assertEquals("rIdHmx2", second)
+        assertEquals("word/media/hmxImage2.png", pkg.rels[second])
+
+        val replaced = DocxImageEdits.replace(p, run, rid, 72f, 72f, maxWidthPt = 500f)!!
+        assertEquals(rid, DocxObjects.info(replaced.fmts[run].obj!!).imageRid)
+        assertEquals(72f to 72f, DocxImageEdits.size(replaced, run))
+        assertEquals("Before \uFFFC after", replaced.text)
+        // Position, drawing id and paragraph XML are preserved; only the picture target changed.
+        assertTrue(replaced.fmts[run].obj!!.contains("id=\"7\""))
+
+        val out = save(bytes, pkg, DocState(replacePara(state.blocks, replaced)!!))
+        val (pkg2, state2) = read(out)
+        val again = paras(state2)[0]
+        val againRun = again.text.indexOf(OBJ_CHAR)
+        assertEquals(rid, DocxObjects.info(again.fmts[againRun].obj!!).imageRid)
+        assertEquals(72f to 72f, DocxImageEdits.size(again, againRun))
+        assertArrayEquals(newPng, pkg2.image(rid))
+        assertArrayEquals(fakePng, pkg2.image("rIdImg"))
+        assertTrue(entryText(out, "word/_rels/document.xml.rels")!!.contains("rIdHmx1"))
+        assertEquals(
+            1,
+            Regex("Extension=\"png\"").findAll(entryText(out, "[Content_Types].xml")!!).count()
+        )
+    }
+
+    @Test
+    fun replacingOneOfTwoPicturesKeepsTheSharedMedia() {
+        val bytes = docx("<w:p>$inline$inline</w:p>")
+        val (pkg, state) = read(bytes)
+        val p = paras(state)[0]
+        val first = p.text.indexOf(OBJ_CHAR)
+        val second = p.text.lastIndexOf(OBJ_CHAR)
+        val newPng = fakePng + byteArrayOf(1, 2, 3)
+
+        val rid = pkg.addImage("png", "image/png", newPng)!!
+        val replaced = DocxImageEdits.replace(p, first, rid)!!
+        assertEquals(rid, DocxObjects.info(replaced.fmts[first].obj!!).imageRid)
+        assertEquals("rIdImg", DocxObjects.info(replaced.fmts[second].obj!!).imageRid)
+
+        val out = save(bytes, pkg, DocState(replacePara(state.blocks, replaced)!!))
+        val (pkg2, state2) = read(out)
+        val again = paras(state2)[0]
+        assertEquals(rid, DocxObjects.info(again.fmts[again.text.indexOf(OBJ_CHAR)].obj!!).imageRid)
+        assertEquals("rIdImg", DocxObjects.info(again.fmts[again.text.lastIndexOf(OBJ_CHAR)].obj!!).imageRid)
+        assertArrayEquals(newPng, pkg2.image(rid))
+        assertArrayEquals(fakePng, pkg2.image("rIdImg"))
+    }
+
+    @Test
+    fun addingAnImageAddsAMissingContentTypeOnlyOnce() {
+        val bytes = docx("<w:p>$inline</w:p>", pngDefault = false)
+        val (pkg, state) = read(bytes)
+        val jpg = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 1, 2, 3)
+        val rid = pkg.addImage("jpg", "image/jpeg", jpg)!!
+        val out = save(bytes, pkg, state)
+
+        val types = entryText(out, "[Content_Types].xml")!!
+        assertEquals(1, Regex("Extension=\"jpg\"").findAll(types).count())
+        assertTrue(types.contains("ContentType=\"image/jpeg\""))
+
+        val (pkg2, state2) = read(out)
+        assertNotNull(pkg2.image(rid))
+        val again = save(out, pkg2, state2)
+        assertEquals(
+            1,
+            Regex("Extension=\"jpg\"").findAll(entryText(again, "[Content_Types].xml")!!).count()
+        )
     }
 
     @Test

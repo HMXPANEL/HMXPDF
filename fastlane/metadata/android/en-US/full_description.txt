@@ -1,0 +1,43 @@
+<p><b>HMXPDF</b> is a free, open-source PDF and document toolkit for Android. Read, annotate and sign PDFs, edit Word (DOCX) documents and Excel (XLSX) workbooks, scan paper, run on-device OCR and create PDFs. Documents are processed on your device: no ads, no accounts and no document uploads.</p>
+
+<p><b>Read and annotate PDFs</b></p>
+<ul>
+<li>Continuous or paged reading, pinch-to-zoom, bookmarks, in-document search and dark pages</li>
+<li>Highlight, underline, strike through, draw, add shapes, text boxes, notes and images</li>
+<li>Fill AcroForm fields and sign with a reusable signature</li>
+</ul>
+
+<p><b>PDF tools</b></p>
+<ul>
+<li>Merge, split, extract, rotate and organise pages</li>
+<li>Compress, encrypt or decrypt, flatten forms, add page numbers and watermarks</li>
+<li>Export pages as images or text, and create PDFs from images, text or HTML</li>
+<li>OCR for scanned pages, with an offline Tesseract fallback</li>
+</ul>
+
+<p><b>Edit Word and Excel documents</b></p>
+<ul>
+<li>DOCX: rich text, tables, headers and footers, page setup, comments, find and replace</li>
+<li>DOCX: offline spell check and read-aloud through the device text-to-speech engine</li>
+<li>XLSX: edit cell values, styles, borders and rows or columns, then save back to XLSX</li>
+<li>View DOC, XLS, PPT, PPTX, ODT, ODS, ODP, RTF, CSV and TXT files</li>
+</ul>
+
+<p><b>Scan and edit images</b></p>
+<ul>
+<li>Multi-page document scanning with Google ML Kit Document Scanner</li>
+<li>Crop, rotate, straighten, adjust, filter, draw and add text or watermarks</li>
+<li>Create a PDF from photos, text, local HTML, or (FOSS build) a web address you enter</li>
+</ul>
+
+<p><b>Private by design</b></p>
+<ul>
+<li>No accounts, advertising, analytics or crash-reporting SDK</li>
+<li>No HMXPDF server for uploading documents or extracted text</li>
+<li>Network use is limited to the optional Office engine download, URL-to-PDF in the FOSS build, and Google Play services components</li>
+</ul>
+
+<p><b>Open source</b></p>
+<p>HMXPDF is distributed under the MIT License. Source code, build instructions and full third-party notices are in the GitHub repository.</p>
+
+<p>Available in English, Spanish, Italian, Portuguese, Russian and Arabic. Requires Android 6.0 or newer.</p>

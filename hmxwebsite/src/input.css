@@ -1,0 +1,336 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 5.5rem;
+  }
+
+  body {
+    @apply bg-night-950 font-sans text-mist-bright antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    @apply bg-accent/40 text-white;
+  }
+
+  [hidden] {
+    display: none !important;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-accent-light ring-offset-2 ring-offset-night-950;
+  }
+
+  img {
+    @apply max-w-full;
+  }
+}
+
+@layer components {
+  .container-x {
+    @apply mx-auto w-full max-w-6xl px-5 sm:px-8;
+  }
+
+  .skip-link {
+    @apply sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[60] focus:rounded-full focus:bg-accent focus:px-5 focus:py-2.5 focus:text-sm focus:font-semibold focus:text-white;
+  }
+
+  .site-header {
+    @apply sticky top-0 z-50 border-b border-white/5 bg-night-950/80 backdrop-blur-xl transition-colors duration-300;
+  }
+
+  .site-header.is-scrolled {
+    @apply border-white/10 bg-night-950/95 shadow-lg shadow-black/30;
+  }
+
+  .nav-link {
+    @apply rounded-full px-3 py-2 text-sm font-medium text-mist transition hover:bg-white/5 hover:text-white;
+  }
+
+  .nav-active {
+    @apply bg-white/[0.06] text-white;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-accent px-6 py-3 text-sm font-semibold text-white shadow-glow-sm transition duration-200 hover:bg-accent-light hover:shadow-glow active:translate-y-px;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border border-white/15 bg-white/[0.02] px-6 py-3 text-sm font-semibold text-white transition duration-200 hover:border-accent/50 hover:bg-accent/10 active:translate-y-px;
+  }
+
+  .btn-sm {
+    @apply px-5 py-2.5;
+  }
+
+  .eyebrow {
+    @apply inline-flex items-center gap-2 text-[0.7rem] font-semibold uppercase tracking-[0.22em] text-accent-light;
+  }
+
+  .section-title {
+    @apply text-3xl font-bold tracking-tight text-white sm:text-4xl;
+  }
+
+  .section-lead {
+    @apply mt-4 max-w-2xl text-base leading-relaxed text-mist sm:text-lg;
+  }
+
+  .card {
+    @apply rounded-3xl border border-white/10 bg-white/[0.025] p-6 transition duration-300 hover:border-accent/30 hover:bg-white/[0.04];
+  }
+
+  .icon-tile {
+    @apply flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-accent/25 bg-accent/10 text-accent-light;
+  }
+
+  .gradient-text {
+    @apply bg-gradient-to-r from-accent-soft via-accent-light to-accent bg-clip-text text-transparent;
+  }
+
+  .phone {
+    @apply relative rounded-[2.25rem] border border-white/15 bg-night-800 p-2 shadow-phone;
+  }
+
+  .phone img {
+    @apply rounded-[1.7rem];
+  }
+
+  .pill {
+    @apply inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-xs font-medium text-mist;
+  }
+
+  .divider {
+    @apply my-16 h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent sm:my-20;
+  }
+
+  .prose-site {
+    @apply text-[0.95rem] leading-7 text-mist;
+  }
+
+  .prose-site h2 {
+    @apply mt-10 text-xl font-bold tracking-tight text-white sm:text-2xl;
+  }
+
+  .prose-site h3 {
+    @apply mt-7 text-base font-semibold text-white;
+  }
+
+  .prose-site p {
+    @apply mt-4;
+  }
+
+  .prose-site ul {
+    @apply mt-4 list-disc space-y-2 pl-5 marker:text-accent;
+  }
+
+  .prose-site ol {
+    @apply mt-4 list-decimal space-y-2 pl-5 marker:text-accent;
+  }
+
+  .prose-site a {
+    @apply text-accent-light underline decoration-accent/40 underline-offset-4 hover:text-white;
+  }
+
+  .prose-site code {
+    @apply rounded bg-white/[0.06] px-1.5 py-0.5 text-[0.85em] text-accent-soft;
+    overflow-wrap: break-word;
+  }
+
+  .prose-site pre {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .prose-site strong {
+    @apply font-semibold text-white;
+  }
+
+  .table-wrap {
+    @apply mt-6 max-w-full overflow-x-auto rounded-2xl border border-white/10;
+  }
+
+  .info-table {
+    @apply w-full border-collapse text-left text-sm;
+  }
+
+  .info-table th {
+    @apply bg-white/[0.04] px-4 py-3 font-semibold text-white;
+  }
+
+  .info-table td {
+    @apply border-t border-white/10 px-4 py-3 align-top text-mist;
+  }
+
+  /* On phones, stack table rows into readable cards instead of a wide scroller. */
+  @media (max-width: 639px) {
+    .table-wrap {
+      @apply border-0 bg-white/[0.02] py-1;
+    }
+
+    .info-table,
+    .info-table tbody,
+    .info-table tr,
+    .info-table td {
+      @apply block w-auto;
+    }
+
+    .info-table thead {
+      @apply hidden;
+    }
+
+    .info-table tr {
+      @apply border-t border-white/10 px-4 py-3.5 first:border-t-0;
+    }
+
+    .info-table td {
+      @apply border-0 px-0 py-0.5;
+    }
+
+    .info-table td:first-child {
+      @apply pb-1 font-semibold text-white;
+    }
+
+    .info-table td::before {
+      @apply mb-0.5 block text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-mist-dim;
+    }
+
+    .info-table td:first-child::before {
+      content: none;
+    }
+
+    .info-table--storage td:nth-child(2)::before {
+      content: "Contains";
+    }
+
+    .info-table--storage td:nth-child(3)::before {
+      content: "Where and how long";
+    }
+
+    .info-table--permissions td:nth-child(2)::before {
+      content: "Why it is used";
+    }
+
+    .info-table td:last-child {
+      @apply pb-0;
+    }
+  }
+
+  .footer-link {
+    @apply text-sm text-mist transition hover:text-white;
+  }
+
+  .scanline {
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.02) 0%,
+      rgba(255, 255, 255, 0.09) 50%,
+      rgba(255, 255, 255, 0.02) 100%
+    );
+    background-size: 200% 100%;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .bg-radial-accent {
+    background-image: radial-gradient(circle at 50% 0%, rgba(168, 85, 247, 0.22), transparent 62%);
+  }
+
+  .mask-fade-b {
+    -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+    mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+  }
+}
+
+/* Entrance and scroll-reveal motion. Everything stays visible without JavaScript. */
+@keyframes hero-rise {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.hero-rise {
+  animation: hero-rise 0.75s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.hero-rise-delay {
+  animation-delay: 0.12s;
+}
+
+.hero-rise-delay-2 {
+  animation-delay: 0.24s;
+}
+
+.js .reveal {
+  opacity: 0;
+  transform: translateY(22px);
+  transition:
+    opacity 0.65s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.65s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Without JavaScript, hide live-fetch placeholders and keep static fallbacks. */
+html:not(.js) #release-loading,
+html:not(.js) #home-release-status {
+  display: none;
+}
+
+.js .reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+details > summary {
+  list-style: none;
+}
+
+details > summary::-webkit-details-marker {
+  display: none;
+}
+
+details[open] .faq-plus {
+  transform: rotate(45deg);
+}
+
+.faq-plus {
+  transition: transform 0.2s ease;
+}
+
+#nav-toggle .icon-close,
+#nav-toggle[aria-expanded='true'] .icon-open {
+  display: none;
+}
+
+#nav-toggle[aria-expanded='true'] .icon-close {
+  display: block;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .hero-rise,
+  .animate-float,
+  .animate-shimmer {
+    animation: none !important;
+  }
+
+  .js .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}

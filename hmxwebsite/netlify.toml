@@ -1,0 +1,26 @@
+# Netlify configuration for the HMXPDF static site.
+#
+# Deploy with the site's "base directory" set to `hmxwebsite` (the folder that
+# contains this file), no build command, and publish directory `.`.
+# If you set the base directory to the repository root instead, change
+# `publish` below to "hmxwebsite".
+
+[build]
+  publish = "."
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+    Cross-Origin-Opener-Policy = "same-origin"
+    Cross-Origin-Resource-Policy = "same-origin"
+    Content-Security-Policy = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; frame-src 'none'; img-src 'self' data:; style-src 'self'; script-src 'self'; font-src 'self'; manifest-src 'self'; connect-src 'self' https://api.github.com; form-action 'self'; upgrade-insecure-requests"
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=3600"

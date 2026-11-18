@@ -1,0 +1,68 @@
+name: Bug report
+description: Report a reproducible problem in HMXPDF.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve HMXPDF. Please state the release version or commit
+        you used. Remove private document content,
+        personal data, access tokens, and file paths from screenshots or logs.
+  - type: input
+    id: version
+    attributes:
+      label: HMXPDF version
+      description: Find this in Settings → About (for example, "2.1.1"). Include the commit if you built from source.
+      placeholder: "2.1.1 (commit abc1234)"
+    validations:
+      required: true
+  - type: dropdown
+    id: distribution
+    attributes:
+      label: How did you install HMXPDF?
+      options:
+        - Built from source
+        - CI debug APK artifact
+        - Google Play
+        - Other / not sure
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device model
+      placeholder: "Samsung Galaxy S24 Ultra"
+    validations:
+      required: true
+  - type: input
+    id: android
+    attributes:
+      label: Android version
+      placeholder: "Android 16"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. Open … 2. Tap … 3. …"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshots or logs
+      description: Optional. Redact names, file paths, document contents, and tokens before attaching.

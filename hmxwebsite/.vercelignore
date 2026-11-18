@@ -1,0 +1,11 @@
+# Files that are useful locally but are not part of the public website.
+.env*
+.vercel
+.git
+.gitignore
+_headers
+netlify.toml
+README.md
+scripts
+src
+tailwind.config.js

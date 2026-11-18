@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FAQ — HMXPDF</title>
+    <meta
+      name="description"
+      content="Answers about HMXPDF: Android requirements, downloads, offline use, DOCX and XLSX editing limits, privacy, signatures, and how to report a bug."
+    />
+    <link rel="canonical" href="https://hmxpdf-website.vercel.app/faq" />
+    <meta name="theme-color" content="#0A0812" />
+    <meta name="color-scheme" content="dark" />
+    <link rel="icon" href="assets/img/favicon-32.png" sizes="32x32" type="image/png" />
+    <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png" />
+    <link rel="manifest" href="site.webmanifest" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="HMXPDF" />
+    <meta property="og:title" content="FAQ — HMXPDF" />
+    <meta
+      property="og:description"
+      content="Answers about HMXPDF: Android requirements, downloads, offline use, DOCX and XLSX editing limits, privacy, signatures, and support."
+    />
+    <meta property="og:url" content="https://hmxpdf-website.vercel.app/faq" />
+    <meta property="og:image" content="https://hmxpdf-website.vercel.app/assets/img/og-image.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="HMXPDF — PDF, Word and spreadsheet tools for Android" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="FAQ — HMXPDF" />
+    <meta
+      name="twitter:description"
+      content="Answers about HMXPDF: Android requirements, downloads, offline use, DOCX and XLSX editing limits, privacy, signatures, and support."
+    />
+    <meta name="twitter:image" content="https://hmxpdf-website.vercel.app/assets/img/og-image.jpg" />
+
+    <link rel="stylesheet" href="assets/css/site.css" />
+    <script src="assets/js/site.js"></script>
+  </head>
+  <body class="min-h-screen bg-night-950">
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header id="site-header" class="site-header">
+      <div class="container-x flex h-16 items-center justify-between gap-4">
+        <a href="index.html" class="flex items-center gap-2.5" aria-label="HMXPDF home">
+          <img src="assets/img/icon-192.png" width="36" height="36" alt="" class="h-9 w-9 rounded-xl" />
+          <span class="text-lg font-bold tracking-tight text-white">HMX<span class="text-accent-light">PDF</span></span>
+        </a>
+
+        <nav class="hidden items-center gap-0.5 lg:flex" aria-label="Primary">
+          <a class="nav-link" href="index.html">Home</a>
+          <a class="nav-link" href="features.html">Features</a>
+          <a class="nav-link" href="download.html">Download</a>
+          <a class="nav-link" href="privacy.html">Privacy</a>
+          <a class="nav-link nav-active" href="faq.html" aria-current="page">FAQ</a>
+          <a class="nav-link" href="support.html">Support</a>
+          <a class="nav-link" href="about.html">About</a>
+        </nav>
+
+        <div class="hidden lg:block">
+          <a class="btn-primary btn-sm" href="download.html">Download</a>
+        </div>
+
+        <button
+          id="nav-toggle"
+          type="button"
+          class="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 text-white transition hover:border-accent/40 hover:bg-white/5 lg:hidden"
+          aria-expanded="false"
+          aria-controls="mobile-nav"
+          aria-label="Toggle navigation"
+        >
+          <svg class="icon-open h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M4 7h16M4 12h16M4 17h16" stroke-linecap="round" />
+          </svg>
+          <svg class="icon-close h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" stroke-linecap="round" />
+          </svg>
+        </button>
+      </div>
+
+      <div id="mobile-nav" class="hidden border-t border-white/5 bg-night-950/95 lg:hidden">
+        <nav class="container-x flex flex-col gap-1 py-4" aria-label="Mobile">
+          <a class="nav-link" href="index.html">Home</a>
+          <a class="nav-link" href="features.html">Features</a>
+          <a class="nav-link" href="download.html">Download</a>
+          <a class="nav-link" href="privacy.html">Privacy</a>
+          <a class="nav-link nav-active" href="faq.html" aria-current="page">FAQ</a>
+          <a class="nav-link" href="support.html">Support</a>
+          <a class="nav-link" href="about.html">About</a>
+          <a class="btn-primary mt-3" href="download.html">Download HMXPDF</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="relative overflow-hidden border-b border-white/5">
+        <div class="pointer-events-none absolute inset-0 bg-radial-accent" aria-hidden="true"></div>
+        <div class="container-x relative py-16 sm:py-20">
+          <p class="eyebrow hero-rise">Frequently asked questions</p>
+          <h1 class="hero-rise mt-5 max-w-3xl text-balance text-4xl font-bold tracking-tight text-white sm:text-5xl">
+            Straight answers about <span class="gradient-text">HMXPDF.</span>
+          </h1>
+          <p class="hero-rise hero-rise-delay mt-6 max-w-2xl text-base leading-relaxed text-mist sm:text-lg">
+            Download status, format support, privacy, and the limits worth knowing before you rely on
+            a document tool.
+          </p>
+        </div>
+      </section>
+
+      <section class="container-x py-12 sm:py-16">
+        <div class="mx-auto max-w-3xl" itemscope itemtype="https://schema.org/FAQPage">
+          <div class="space-y-3">
+            <details class="group rounded-2xl border border-white/10 bg-white/[0.02] p-5 transition open:border-accent/30 open:bg-white/[0.035] sm:p-6" itemscope itemprop="mainEntity" itemtype="https://schema.org/Question">
+              <summary class="flex cursor-pointer items-start justify-between gap-4">
+                <h2 class="text-base font-semibold text-white sm:text-lg" itemprop="name">What is HMXPDF?</h2>
+                <svg class="faq-plus mt-0.5 h-5 w-5 shrink-0 text-accent-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" stroke-linecap="round" />
+                </svg>
+              </summary>
+              <div class="mt-4 text-sm leading-7 text-mist" itemprop="acceptedAnswer" itemscope itemtype="https://schema.org/Answer">
+                <div itemprop="text">
+                  <p>
+                    HMXPDF is an open-source Android document app for reading and annotating PDFs,
+                    filling forms, signing, scanning paper, editing Word and Excel documents, editing
+                    images, and creating PDFs. It is built with Kotlin and Jetpack Compose and is
+                    licensed under the MIT License.
+                  </p>
+                </div>
+              </div>
+            </details>
+
+            <details class="group rounded-2xl border border-white/10 bg-white/[0.02] p-5 transition open:border-accent/30 open:bg-white/[0.035] sm:p-6" itemscope itemprop="mainEntity" itemtype="https://schema.org/Question">
+              <summary class="flex cursor-pointer items-start justify-between gap-4">
+                <h2 class="text-base font-semibold text-white sm:text-lg" itemprop="name">Is HMXPDF free and open source?</h2>
+                <svg class="faq-plus mt-0.5 h-5 w-5 shrink-0 text-accent-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" stroke-linecap="round" />
+                </svg>
+              </summary>
+              <div class="mt-4 text-sm leading-7 text-mist" itemprop="acceptedAnswer" itemscope itemtype="https://schema.org/Answer">
+                <div itemprop="text">
+                  <p>
+                    Yes. The source is published under the MIT License, which permits use,
+                    modification, and redistribution with the license notice. Third-party components
+                    keep their own licenses. The source is on
+                    <a class="text-accent-light underline decoration-accent/40 underline-offset-4 hover:text-white" href="https://github.com/HMXPANEL/HMXPDF" target="_blank" rel="noopener noreferrer">GitHub</a>.
+                  </p>
+                </div>
+              </div>
+            </details>
+
+            <details class="group rounded-2xl border border-white/10 bg-white/[0.02] p-5 transition open:border-accent/30 open:bg-white/[0.035] sm:p-6" itemscope itemprop="mainEntity" itemtype="https://schema.org/Question">
+              <summary class="flex cursor-pointer items-start justify-between gap-4">
+                <h2 class="text-base font-semibold text-white sm:text-lg" itemprop="name">Which Android versions are supported?</h2>
+                <svg class="faq-plus mt-0.5 h-5 w-5 shrink-0 text-accent-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" stroke-linecap="round" />
+                </svg>
+              </summary>
+              <div class="mt-4 text-sm leading-7 text-mist" itemprop="acceptedAnswer" itemscope itemtype="https://schema.org/Answer">
+                <div itemprop="text">
+                  <p>
+                    Android 6.0 (API 23) or newer. Some features depend on the device or on Google
+                    Play services, so availability can vary even on a supported Android version.
+                  </p>
+                </div>
+              </div>
+            </details>
+
+            <details class="group rounded-2xl border border-white/10 bg-white/[0.02] p-5 transition open:border-accent/30 open:bg-white/[0.035] sm:p-6" itemscope itemprop="mainEntity" itemtype="https://schema.org/Question">
+              <summary class="flex cursor-pointer items-start justify-between gap-4">
+                <h2 class="text-base font-semibold text-white sm:text-lg" itemprop="name">Where can I download the APK?</h2>
+                <svg class="faq-plus mt-0.5 h-5 w-5 shrink-0 text-accent-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" stroke-linecap="round" />
+                </svg>
+              </summary>
+              <div class="mt-4 text-sm leading-7 text-mist" itemprop="acceptedAnswer" itemscope itemtype="https://schema.org/Answer">
+                <div itemprop="text">
+                  <p>
+                    Only from the official
+                    <a class="text-accent-light underline decoration-accent/40 underline-offset-4 hover:text-white" href="https://github.com/HMXPANEL/HMXPDF/releases" target="_blank" rel="noopener noreferrer">GitHub Releases page</a>.
+                    The <a class="text-accent-light underline decoration-accent/40 underline-offset-4 hover:text-white" href="download.html">Download page</a>
+                    reads that release feed and shows the current APK assets, version, date, changelog, and
+                    SHA-256 when GitHub provides them.
+                  </p>
+                  <p>
+                    If the download panel says there is no public APK release yet, none has been
+                    published. HMXPDF's website does not host or mirror APK files, and it does not list
+                    debug or unsigned builds as official downloads.
+                  </p>
+                </div>
+              </div>
+            </details>
+
+            <details class="group rounded-2xl border border-white/10 bg-white/[0.02] p-5 transition open:border-accent/30 open:bg-white/[0.035] sm:p-6" itemscope itemprop="mainEntity" itemtype="https://schema.org/Question">
+              <summary class="flex cursor-pointer items-start justify-between gap-4">
+                <h2 class="text-base font-semibold text-white sm:text-lg" itemprop="name">Can I use HMXPDF offline?</h2>
+                <svg class="faq-plus mt-0.5 h-5 w-5 shrink-0 text-accent-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" stroke-linecap="round" />
+                </svg>
+              </summary>
+              <div class="mt-4 text-sm leading-7 text-mist" itemprop="acceptedAnswer" itemscope itemtype="https://schema.org/Answer">
+                <div itemprop="text">
+                  <p>
+                    Most PDF, spreadsheet, image, and local-document work runs on the device. HMXPDF is
+                    not fully offline in every build: the FOSS build needs a connection to download the
+                    optional Office engine or to convert a web address you enter. Google Play services
+                    may also provide scanner or background-removal components.
+                  </p>
+                  <p>
+                    See the <a class="text-accent-light underline decoration-accent/40 underline-offset-4 hover:text-white" href="privacy.html">privacy policy</a>
+                    for the complete network list.
+                  </p>
+                </div>
+              </div>
+            </details>
+
+            <details class="group rounded-2xl border border-white/10 bg-white/[0.02] p-5 transition open:border-accent/30 open:bg-white/[0.035] sm:p-6" itemscope itemprop="mainEntity" itemtype="https://schema.org/Question">
+              <summary class="flex cursor-pointer items-start justify-between gap-4">
+                <h2 class="text-base font-semibold text-white sm:text-lg" itemprop="name">Can I edit Word, PowerPoint, or existing PDF text?</h2>
+                <svg class="faq-plus mt-0.5 h-5 w-5 shrink-0 text-accent-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" stroke-linecap="round" />
+                </svg>
+              </summary>
+              <div class="mt-4 text-sm leading-7 text-mist" itemprop="acceptedAnswer" itemscope itemtype="https://schema.org/Answer">
+                <div itemprop="text">
+                  <p>
+                    DOCX files have an in-app editor for paragraphs, tables, formatting, comments,
+                    tracked changes, headers and footers, page setup, and find-and-replace. It is not
+                    full Microsoft Word parity, and complex parts may open read-only.
+                  </p>
+                  <p>
+                    PPT and PPTX files are viewed and can be exported as PDF; they are not edited in
+                    their original format. PDFs can be annotated, signed, have forms filled, and have
+                    pages organized, but text already printed into a PDF page is not rewritten.
+                  </p>
+                </div>
+              </div>
+            </details>
+
+            <details class="group rounded-2xl border border-white/10 bg-white/[0.02] p-5 transition open:border-accent/30 open:bg-white/[0.035] sm:p-6" itemscope itemprop="mainEntity" itemtype="https://schema.org/Question">
+              <summary class="flex cursor-pointer items-start justify-between gap-4">
+                <h2 class="text-base font-semibold text-white sm:text-lg" itemprop="name">Which spreadsheet formats can be edited?</h2>
+                <svg class="faq-plus mt-0.5 h-5 w-5 shrink-0 text-accent-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" stroke-linecap="round" />
+                </svg>
+              </summary>
+              <div class="mt-4 text-sm leading-7 text-mist" itemprop="acceptedAnswer" itemscope itemtype="https://schema.org/Answer">
+                <div itemprop="text">
+                  <p>
+                    XLSX is the spreadsheet format HMXPDF can edit and save. XLS and ODS files are
+                    opened through the viewer, and visual fidelity varies by file. CSV and TXT files
+                    can also be opened, but they do not have XLSX cell editing and save support.
+                  </p>
+                </div>
+              </div>
+            </details>
+
+            <details class="group rounded-2xl border border-white/10 bg-white/[0.02] p-5 transition open:border-accent/30 open:bg-white/[0.035] sm:p-6" itemscope itemprop="mainEntity" itemtype="https://schema.org/Question">
+              <summary class="flex cursor-pointer items-start justify-between gap-4">
+                <h2 class="text-base font-semibold text-white sm:text-lg" itemprop="name">Does HMXPDF collect my documents or usage data?</h2>
+                <svg class="faq-plus mt-0.5 h-5 w-5 shrink-0 text-accent-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" stroke-linecap="round" />
+                </svg>
+              </summary>
+              <div class="mt-4 text-sm leading-7 text-mist" itemprop="acceptedAnswer" itemscope itemtype="https://schema.org/Answer">
+                <div itemprop="text">
+                  <p>
+                    HMXPDF has no account system, no in-app advertising, no analytics SDK, and no
+                    crash-reporting service in the app code. It does not operate a server for uploading
+                    documents or extracted text. Recents, local document copies, checkpoints,
+                    signatures, and settings are stored on your device.
+                  </p>
+                  <p>
+                    A few optional features contact the network, including the Office engine download,
+                    web-address conversion, and Google Play services components. The
+                    <a class="text-accent-light underline decoration-accent/40 underline-offset-4 hover:text-white" href="privacy.html">privacy policy</a>
+                    explains each one.
+                  </p>
+                </div>
+              </div>
+            </details>
+
+            <details class="group rounded-2xl border border-white/10 bg-white/[0.02] p-5 transition open:border-accent/30 open:bg-white/[0.035] sm:p-6" itemscope itemprop="mainEntity" itemtype="https://schema.org/Question">
+              <summary class="flex cursor-pointer items-start justify-between gap-4">
+                <h2 class="text-base font-semibold text-white sm:text-lg" itemprop="name">Are the signatures cryptographic digital signatures?</h2>
+                <svg class="faq-plus mt-0.5 h-5 w-5 shrink-0 text-accent-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" stroke-linecap="round" />
+                </svg>
+              </summary>
+              <div class="mt-4 text-sm leading-7 text-mist" itemprop="acceptedAnswer" itemscope itemtype="https://schema.org/Answer">
+                <div itemprop="text">
+                  <p>
+                    No. HMXPDF lets you save a signature image and place it on a page. It does not
+                    create a certificate-based digital signature, verify a signer's identity, or
+                    provide a timestamp authority. Use a dedicated e-signature service if you need
+                    those guarantees.
+                  </p>
+                </div>
+              </div>
+            </details>
+
+            <details class="group rounded-2xl border border-white/10 bg-white/[0.02] p-5 transition open:border-accent/30 open:bg-white/[0.035] sm:p-6" itemscope itemprop="mainEntity" itemtype="https://schema.org/Question">
+              <summary class="flex cursor-pointer items-start justify-between gap-4">
+                <h2 class="text-base font-semibold text-white sm:text-lg" itemprop="name">Do I need Google Play services?</h2>
+                <svg class="faq-plus mt-0.5 h-5 w-5 shrink-0 text-accent-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" stroke-linecap="round" />
+                </svg>
+              </summary>
+              <div class="mt-4 text-sm leading-7 text-mist" itemprop="acceptedAnswer" itemscope itemtype="https://schema.org/Answer">
+                <div itemprop="text">
+                  <p>
+                    Not for the core PDF, page, image, and local-document tools. The document scanner
+                    is provided by Google Play services, and background removal uses an ML Kit model
+                    that may be delivered by Play services. Some OCR components and read-aloud also
+                    depend on the device. Without those components, the related feature may be
+                    unavailable, but other tools continue to work.
+                  </p>
+                </div>
+              </div>
+            </details>
+
+            <details class="group rounded-2xl border border-white/10 bg-white/[0.02] p-5 transition open:border-accent/30 open:bg-white/[0.035] sm:p-6" itemscope itemprop="mainEntity" itemtype="https://schema.org/Question">
+              <summary class="flex cursor-pointer items-start justify-between gap-4">
+                <h2 class="text-base font-semibold text-white sm:text-lg" itemprop="name">Where are exported files saved?</h2>
+                <svg class="faq-plus mt-0.5 h-5 w-5 shrink-0 text-accent-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" stroke-linecap="round" />
+                </svg>
+              </summary>
+              <div class="mt-4 text-sm leading-relaxed text-mist" itemprop="acceptedAnswer" itemscope itemtype="https://schema.org/Answer">
+                <div itemprop="text">
+                  <p>
+                    New exports go to <code class="rounded bg-white/[0.06] px-1.5 py-0.5 text-[0.85em] text-accent-soft">Download/HMXPDF</code>
+                    by default, or to a folder you choose through Android's file picker. Files you save
+                    there remain until you delete them. Uninstalling the app does not delete exports
+                    stored outside its private storage.
+                  </p>
+                </div>
+              </div>
+            </details>
+
+            <details class="group rounded-2xl border border-white/10 bg-white/[0.02] p-5 transition open:border-accent/30 open:bg-white/[0.035] sm:p-6" itemscope itemprop="mainEntity" itemtype="https://schema.org/Question">
+              <summary class="flex cursor-pointer items-start justify-between gap-4">
+                <h2 class="text-base font-semibold text-white sm:text-lg" itemprop="name">Why does an Office document look different in the app?</h2>
+                <svg class="faq-plus mt-0.5 h-5 w-5 shrink-0 text-accent-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" stroke-linecap="round" />
+                </svg>
+              </summary>
+              <div class="mt-4 text-sm leading-7 text-mist" itemprop="acceptedAnswer" itemscope itemtype="https://schema.org/Answer">
+                <div itemprop="text">
+                  <p>
+                    Office rendering is complex and depends on the format and renderer. The optional
+                    LibreOffice-based engine can improve fidelity for supported Office formats. In the
+                    FOSS build it is downloaded only when you request it in Settings, after its size
+                    and SHA-256 are checked; it is not bundled in the GitHub APKs.
+                  </p>
+                </div>
+              </div>
+            </details>
+
+            <details class="group rounded-2xl border border-white/10 bg-white/[0.02] p-5 transition open:border-accent/30 open:bg-white/[0.035] sm:p-6" itemscope itemprop="mainEntity" itemtype="https://schema.org/Question">
+              <summary class="flex cursor-pointer items-start justify-between gap-4">
+                <h2 class="text-base font-semibold text-white sm:text-lg" itemprop="name">How do I report a bug or request a feature?</h2>
+                <svg class="faq-plus mt-0.5 h-5 w-5 shrink-0 text-accent-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" stroke-linecap="round" />
+                </svg>
+              </summary>
+              <div class="mt-4 text-sm leading-6 text-mist" itemprop="acceptedAnswer" itemscope itemtype="https://schema.org/Answer">
+                <div itemprop="text">
+                  <p>
+                    Open an issue on the
+                    <a class="text-accent-light underline decoration-accent/40 underline-offset-4 hover:text-white" href="https://github.com/HMXPANEL/HMXPDF/issues" target="_blank" rel="noopener noreferrer">official issue tracker</a>.
+                    Include the app version from Settings, your Android version, the device model, the
+                    distribution (GitHub APK or Play build), and clear reproduction steps. Remove
+                    private document content from screenshots and logs.
+                  </p>
+                  <p>
+                    For a security concern, avoid posting exploit details publicly; ask for a private
+                    channel in a minimal issue first. See <a class="text-accent-light underline decoration-accent/40 underline-offset-4 hover:text-white" href="support.html">Support</a>.
+                  </p>
+                </div>
+              </div>
+            </details>
+
+            <details class="group rounded-2xl border border-white/10 bg-white/[0.02] p-5 transition open:border-accent/30 open:bg-white/[0.035] sm:p-6" itemscope itemprop="mainEntity" itemtype="https://schema.org/Question">
+              <summary class="flex cursor-pointer items-start justify-between gap-4">
+                <h2 class="text-base font-semibold text-white sm:text-lg" itemprop="name">Is there an iOS, web, or desktop version?</h2>
+                <svg class="faq-plus mt-0.5 h-5 w-5 shrink-0 text-accent-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" stroke-linecap="round" />
+                </svg>
+              </summary>
+              <div class="mt-4 text-sm leading-7 text-mist" itemprop="acceptedAnswer" itemscope itemtype="https://schema.org/Answer">
+                <div itemprop="text">
+                  <p>
+                    No. HMXPDF is an Android application. This website provides information, release
+                    status, privacy details, and support links; it is not a browser-based document
+                    editor.
+                  </p>
+                </div>
+              </div>
+            </details>
+
+            <details class="group rounded-2xl border border-white/10 bg-white/[0.02] p-5 transition open:border-accent/30 open:bg-white/[0.035] sm:p-6" itemscope itemprop="mainEntity" itemtype="https://schema.org/Question">
+              <summary class="flex cursor-pointer items-start justify-between gap-4">
+                <h2 class="text-base font-semibold text-white sm:text-lg" itemprop="name">Can I use HMXPDF commercially?</h2>
+                <svg class="faq-plus mt-0.5 h-5 w-5 shrink-0 text-accent-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" stroke-linecap="round" />
+                </svg>
+              </summary>
+              <div class="mt-4 text-sm leading-7 text-mist" itemprop="acceptedAnswer" itemscope itemtype="https://schema.org/Answer">
+                <div itemprop="text">
+                  <p>
+                    The MIT License permits commercial use, modification, and redistribution, provided
+                    the copyright and permission notice are retained. The license does not grant rights
+                    to the HMXPDF name, the app icon, or third-party trademarks. Third-party components
+                    remain under their own licenses.
+                  </p>
+                </div>
+              </div>
+            </details>
+          </div>
+
+          <div class="mt-10 rounded-3xl border border-white/10 bg-white/[0.02] p-6 sm:p-8">
+            <div class="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
+              <div>
+                <h2 class="text-xl font-bold text-white">Still stuck?</h2>
+                <p class="mt-2 text-sm text-mist">Send a reproducible report through the official tracker.</p>
+              </div>
+              <a class="btn-primary btn-sm" href="support.html">Get support</a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="border-t border-white/10 bg-night-900">
+      <div class="container-x py-14">
+        <div class="grid gap-10 md:grid-cols-4">
+          <div class="md:col-span-2">
+            <a href="index.html" class="flex items-center gap-2.5" aria-label="HMXPDF home">
+              <img src="assets/img/icon-192.png" width="36" height="36" alt="" class="h-9 w-9 rounded-xl" />
+              <span class="text-lg font-bold tracking-tight text-white">HMX<span class="text-accent-light">PDF</span></span>
+            </a>
+            <p class="mt-4 max-w-md text-sm leading-relaxed text-mist">
+              An open-source Android document toolkit for PDFs, Word files, spreadsheets, scans, and
+              images. Built with Kotlin and Jetpack Compose.
+            </p>
+            <p class="mt-4 text-xs text-mist-dim">Source licensed under the MIT License.</p>
+          </div>
+
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-mist-dim">Explore</p>
+            <ul class="mt-4 space-y-2.5">
+              <li><a class="footer-link" href="index.html">Home</a></li>
+              <li><a class="footer-link" href="features.html">Features</a></li>
+              <li><a class="footer-link" href="download.html">Download</a></li>
+              <li><a class="footer-link" href="faq.html">FAQ</a></li>
+            </ul>
+          </div>
+
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-mist-dim">Project</p>
+            <ul class="mt-4 space-y-2.5">
+              <li><a class="footer-link" href="support.html">Support</a></li>
+              <li><a class="footer-link" href="privacy.html">Privacy Policy</a></li>
+              <li><a class="footer-link" href="about.html">About</a></li>
+              <li>
+                <a class="footer-link" href="https://github.com/HMXPANEL/HMXPDF" target="_blank" rel="noopener noreferrer">Source code</a>
+              </li>
+              <li>
+                <a class="footer-link" href="https://github.com/HMXPANEL/HMXPDF/releases" target="_blank" rel="noopener noreferrer">Releases</a>
+              </li>
+              <li>
+                <a class="footer-link" href="https://github.com/HMXPANEL/HMXPDF/issues" target="_blank" rel="noopener noreferrer">Report an issue</a>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="mt-12 border-t border-white/10 pt-8">
+          <p class="max-w-4xl text-xs leading-relaxed text-mist-dim">
+            HMXPDF is an independent open-source Android project. Android is a trademark of Google
+            LLC. Microsoft, Word, Excel, and PowerPoint are trademarks of Microsoft Corporation.
+            LibreOffice is a trademark of The Document Foundation. HMXPDF is not affiliated with or
+            endorsed by these companies.
+          </p>
+          <p class="mt-3 text-xs text-mist-dim">
+            © <span data-year>2026</span> HMXPDF. Screenshots show the current source build.
+          </p>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

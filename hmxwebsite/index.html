@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HMXPDF — PDF, Word &amp; spreadsheet tools for Android</title>
+    <meta
+      name="description"
+      content="HMXPDF is an open-source Android app for reading and annotating PDFs, signing forms, scanning paper, editing Word and Excel documents, and creating PDFs on your device."
+    />
+    <meta
+      name="keywords"
+      content="Android PDF editor, PDF annotation Android, DOCX editor Android, XLSX editor Android, scan to PDF, OCR PDF, open source PDF app"
+    />
+    <link rel="canonical" href="https://hmxpdf-website.vercel.app/" />
+    <meta name="theme-color" content="#0A0812" />
+    <meta name="color-scheme" content="dark" />
+    <link rel="icon" href="assets/img/favicon-32.png" sizes="32x32" type="image/png" />
+    <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png" />
+    <link rel="manifest" href="site.webmanifest" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="HMXPDF" />
+    <meta property="og:title" content="HMXPDF — PDF, Word &amp; spreadsheet tools for Android" />
+    <meta
+      property="og:description"
+      content="Read, annotate, sign, scan, and edit documents on your Android device. Open source, no account, no document upload server."
+    />
+    <meta property="og:url" content="https://hmxpdf-website.vercel.app/" />
+    <meta property="og:image" content="https://hmxpdf-website.vercel.app/assets/img/og-image.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="HMXPDF — PDF, Word and spreadsheet tools for Android" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="HMXPDF — PDF, Word &amp; spreadsheet tools for Android" />
+    <meta
+      name="twitter:description"
+      content="Read, annotate, sign, scan, and edit documents on your Android device. Open source, no account, no document upload server."
+    />
+    <meta name="twitter:image" content="https://hmxpdf-website.vercel.app/assets/img/og-image.jpg" />
+
+    <link rel="stylesheet" href="assets/css/site.css" />
+    <script src="assets/js/site.js"></script>
+  </head>
+  <body class="min-h-screen bg-night-950">
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header id="site-header" class="site-header">
+      <div class="container-x flex h-16 items-center justify-between gap-4">
+        <a href="index.html" class="flex items-center gap-2.5" aria-label="HMXPDF home">
+          <img src="assets/img/icon-192.png" width="36" height="36" alt="" class="h-9 w-9 rounded-xl" />
+          <span class="text-lg font-bold tracking-tight text-white">HMX<span class="text-accent-light">PDF</span></span>
+        </a>
+
+        <nav class="hidden items-center gap-0.5 lg:flex" aria-label="Primary">
+          <a class="nav-link nav-active" href="index.html" aria-current="page">Home</a>
+          <a class="nav-link" href="features.html">Features</a>
+          <a class="nav-link" href="download.html">Download</a>
+          <a class="nav-link" href="privacy.html">Privacy</a>
+          <a class="nav-link" href="faq.html">FAQ</a>
+          <a class="nav-link" href="support.html">Support</a>
+          <a class="nav-link" href="about.html">About</a>
+        </nav>
+
+        <div class="hidden lg:block">
+          <a class="btn-primary btn-sm" href="download.html">Download</a>
+        </div>
+
+        <button
+          id="nav-toggle"
+          type="button"
+          class="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 text-white transition hover:border-accent/40 hover:bg-white/5 lg:hidden"
+          aria-expanded="false"
+          aria-controls="mobile-nav"
+          aria-label="Toggle navigation"
+        >
+          <svg class="icon-open h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M4 7h16M4 12h16M4 17h16" stroke-linecap="round" />
+          </svg>
+          <svg class="icon-close h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" stroke-linecap="round" />
+          </svg>
+        </button>
+      </div>
+
+      <div id="mobile-nav" class="hidden border-t border-white/5 bg-night-950/98 lg:hidden">
+        <nav class="container-x flex flex-col gap-1 py-4" aria-label="Mobile">
+          <a class="nav-link nav-active" href="index.html" aria-current="page">Home</a>
+          <a class="nav-link" href="features.html">Features</a>
+          <a class="nav-link" href="download.html">Download</a>
+          <a class="nav-link" href="privacy.html">Privacy</a>
+          <a class="nav-link" href="faq.html">FAQ</a>
+          <a class="nav-link" href="support.html">Support</a>
+          <a class="nav-link" href="about.html">About</a>
+          <a class="btn-primary mt-3" href="download.html">Download HMXPDF</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main">
+      <!-- Hero -->
+      <section class="relative overflow-hidden border-b border-white/5">
+        <div class="pointer-events-none absolute inset-0 bg-radial-accent" aria-hidden="true"></div>
+        <div class="pointer-events-none absolute -left-24 top-32 h-72 w-72 rounded-full bg-accent/20 blur-[120px]" aria-hidden="true"></div>
+        <div class="pointer-events-none absolute -right-24 bottom-0 h-80 w-80 rounded-full bg-accent-dark/20 blur-[130px]" aria-hidden="true"></div>
+
+        <div class="container-x relative grid items-center gap-14 py-16 sm:py-20 lg:grid-cols-[1.05fr_0.95fr] lg:gap-12 lg:py-24">
+          <div class="hero-rise">
+            <p class="eyebrow">
+              <span class="inline-block h-1.5 w-1.5 rounded-full bg-accent-light"></span>
+              Open source · Android 6.0+
+            </p>
+            <h1 class="mt-5 max-w-2xl text-balance text-4xl font-bold leading-[1.05] tracking-tight text-white sm:text-5xl lg:text-6xl">
+              Your document workspace. <span class="gradient-text">On your device.</span>
+            </h1>
+            <p class="mt-6 max-w-xl text-base leading-relaxed text-mist sm:text-lg">
+              HMXPDF is an Android app for reading and annotating PDFs, signing forms, scanning paper,
+              editing Word and Excel documents, and creating PDFs — without an account.
+            </p>
+
+            <div class="mt-8 flex flex-wrap items-center gap-3">
+              <a href="download.html" class="btn-primary">
+                Get HMXPDF
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M5 12h14m-6-6 6 6-6 6" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </a>
+              <a href="features.html" class="btn-secondary">Explore features</a>
+            </div>
+
+            <a class="mt-5 inline-flex items-center gap-2 text-xs text-mist-dim transition hover:text-accent-light" href="download.html">
+              <span class="relative flex h-2 w-2" aria-hidden="true">
+                <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-50"></span>
+                <span class="relative inline-flex h-2 w-2 rounded-full bg-accent-light"></span>
+              </span>
+              <span id="home-release-status">Checking GitHub Releases…</span>
+              <noscript><span>Check releases on GitHub</span></noscript>
+            </a>
+
+            <ul class="mt-8 flex flex-wrap gap-2 text-xs">
+              <li class="pill">No account</li>
+              <li class="pill">No ads or analytics SDK</li>
+              <li class="pill">MIT licensed</li>
+              <li class="pill">On-device processing</li>
+            </ul>
+          </div>
+
+          <div class="hero-rise hero-rise-delay relative mx-auto w-full max-w-[330px] sm:max-w-[350px]">
+            <div class="absolute -inset-8 rounded-[3.5rem] bg-accent/20 blur-3xl" aria-hidden="true"></div>
+            <div class="phone relative">
+              <img
+                src="assets/img/screenshot-home.jpg"
+                width="720"
+                height="1020"
+                alt="HMXPDF home screen showing Open PDF and Scan actions with the recent files list"
+                fetchpriority="high"
+              />
+            </div>
+            <div class="absolute -left-5 bottom-24 hidden items-center gap-2 rounded-2xl border border-white/10 bg-night-800/90 px-4 py-3 shadow-xl backdrop-blur sm:flex">
+              <span class="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-400/10 text-emerald-300">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="m5 13 4 4L19 7" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </span>
+              <div>
+                <p class="text-xs font-semibold text-white">Built for local files</p>
+                <p class="text-[0.7rem] text-mist-dim">No document upload server</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- App facts / structured data -->
+      <section class="border-b border-white/5 bg-night-900/50">
+        <div class="container-x py-8" itemscope itemtype="https://schema.org/SoftwareApplication">
+          <meta itemprop="name" content="HMXPDF" />
+          <meta itemprop="applicationCategory" content="ProductivityApplication" />
+          <meta itemprop="applicationSubCategory" content="PDF, Word and spreadsheet editor" />
+          <meta itemprop="operatingSystem" content="Android 6.0 (API 23) or newer" />
+          <meta itemprop="license" content="https://opensource.org/license/mit" />
+          <link itemprop="url" href="https://hmxpdf-website.vercel.app/" />
+          <link itemprop="downloadUrl" href="https://github.com/HMXPANEL/HMXPDF/releases" />
+          <meta
+            itemprop="featureList"
+            content="PDF reading and search, annotation and signatures, PDF forms and page tools, OCR and document scanning, DOCX editing, XLSX editing, image editing, PDF creation"
+          />
+          <div itemprop="offers" itemscope itemtype="https://schema.org/Offer">
+            <meta itemprop="price" content="0" />
+            <meta itemprop="priceCurrency" content="USD" />
+          </div>
+
+          <dl class="grid grid-cols-2 gap-6 text-sm sm:grid-cols-4">
+            <div>
+              <dt class="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-mist-dim">Platform</dt>
+              <dd class="mt-1 font-medium text-white">Android 6.0+</dd>
+            </div>
+            <div>
+              <dt class="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-mist-dim">Category</dt>
+              <dd class="mt-1 font-medium text-white">Documents &amp; productivity</dd>
+            </div>
+            <div>
+              <dt class="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-mist-dim">Price</dt>
+              <dd class="mt-1 font-medium text-white">Free</dd>
+            </div>
+            <div>
+              <dt class="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-mist-dim">License</dt>
+              <dd class="mt-1 font-medium text-white">MIT (open source)</dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+
+      <!-- Feature grid -->
+      <section class="container-x py-16 sm:py-24">
+        <div class="reveal max-w-3xl">
+          <p class="eyebrow">One app, many document jobs</p>
+          <h2 class="section-title mt-4">A document toolkit, not just a viewer.</h2>
+          <p class="section-lead">
+            Open a PDF, sign a form, scan a page, or make a quick edit to a Word or Excel file.
+            HMXPDF keeps the common document tasks close together.
+          </p>
+        </div>
+
+        <div class="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <article class="card reveal">
+            <span class="icon-tile">
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+                <path d="M7 3.5h7l4.5 4.5v12.5H7z" stroke-linejoin="round" />
+                <path d="M14 3.5V8h4.5M9.5 12h6M9.5 15.5h6" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </span>
+            <h3 class="mt-5 text-base font-semibold text-white">Read and search PDFs</h3>
+            <p class="mt-2 text-sm leading-relaxed text-mist">
+              Continuous scrolling, pinch-to-zoom, page navigation, bookmarks, dark pages, and
+              in-document search. Select and copy text as you read.
+            </p>
+          </article>
+
+          <article class="card reveal">
+            <span class="icon-tile">
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+                <path d="m4 20 4.5-1 9.6-9.6a2.1 2.1 0 0 0-3-3L5.5 16z" stroke-linejoin="round" />
+                <path d="m13.5 7.5 3 3" />
+              </svg>
+            </span>
+            <h3 class="mt-5 text-base font-semibold text-white">Annotate and sign</h3>
+            <p class="mt-2 text-sm leading-relaxed text-mist">
+              Highlight, underline, strike through, draw, add shapes or text notes, and place a saved
+              signature. Export an annotated copy when you are done.
+            </p>
+          </article>
+
+          <article class="card reveal">
+            <span class="icon-tile">
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+                <path d="M12 3 3.5 8 12 13l8.5-5z" stroke-linejoin="round" />
+                <path d="m3.5 12.5 8.5 5 8.5-5M3.5 17 12 22l8.5-5" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </span>
+            <h3 class="mt-5 text-base font-semibold text-white">Organize and convert</h3>
+            <p class="mt-2 text-sm leading-relaxed text-mist">
+              Merge, split, extract, reorder, rotate, compress, encrypt, decrypt, watermark, and add
+              page numbers. Convert PDFs to images or text, and images to PDF.
+            </p>
+          </article>
+
+          <article class="card reveal">
+            <span class="icon-tile">
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+                <path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16" stroke-linecap="round" />
+                <path d="M7.5 7.5h9v9h-9z" stroke-linejoin="round" />
+              </svg>
+            </span>
+            <h3 class="mt-5 text-base font-semibold text-white">Scan and OCR</h3>
+            <p class="mt-2 text-sm leading-relaxed text-mist">
+              Capture multi-page documents with the Google Play services scanner, or run OCR on
+              image-only PDF pages with the bundled on-device engine.
+            </p>
+          </article>
+
+          <article class="card reveal">
+            <span class="icon-tile">
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+                <path d="M6 3.5h8l4.5 4.5v12.5H6z" stroke-linejoin="round" />
+                <path d="M14 3.5V8h4.5M9 11.5h6M9 15h4.5" stroke-linecap="round" />
+              </svg>
+            </span>
+            <h3 class="mt-5 text-base font-semibold text-white">Edit Word documents</h3>
+            <p class="mt-2 text-sm leading-relaxed text-mist">
+              Open DOCX files with true page proportions, edit paragraphs and table cells in place,
+              apply formatting, work with comments and tracked changes, then save or export to PDF.
+            </p>
+          </article>
+
+          <article class="card reveal">
+            <span class="icon-tile">
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+                <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
+                <path d="M3.5 9.5h17M9 9.5v10M15 9.5v10M3.5 14.5h17" />
+              </svg>
+            </span>
+            <h3 class="mt-5 text-base font-semibold text-white">Work with spreadsheets</h3>
+            <p class="mt-2 text-sm leading-relaxed text-mist">
+              Edit XLSX cells and formulas, apply number formats and styles, use validation
+              dropdowns, insert rows or columns, and save the workbook back to XLSX.
+            </p>
+          </article>
+        </div>
+
+        <p class="mt-8 text-sm text-mist-dim">
+          PDF printed text is not rewritten in place, and Office fidelity varies by document. See the
+          <a class="text-accent-light underline decoration-accent/40 underline-offset-4 hover:text-white" href="features.html">full feature list and limits</a>.
+        </p>
+      </section>
+
+      <!-- Screens -->
+      <section class="border-y border-white/5 bg-night-900/40">
+        <div class="container-x py-16 sm:py-24">
+          <div class="reveal flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div class="max-w-2xl">
+              <p class="eyebrow">A look inside</p>
+              <h2 class="section-title mt-4">Clear tools, quiet interface.</h2>
+              <p class="section-lead">
+                The app groups work by intent: read a PDF, organize pages, convert a file, or edit a
+                document. These screenshots come from the current source build.
+              </p>
+            </div>
+            <a href="download.html" class="btn-secondary btn-sm shrink-0">Download status</a>
+          </div>
+
+          <div class="mt-10 grid gap-5 sm:grid-cols-3">
+            <figure class="reveal rounded-3xl border border-white/10 bg-night-850 p-3">
+              <img
+                src="assets/img/screenshot-tools.jpg"
+                width="720"
+                height="1173"
+                loading="lazy"
+                alt="HMXPDF Tools screen with PDF organizing and conversion tools"
+                class="rounded-2xl"
+              />
+              <figcaption class="px-2 py-3">
+                <p class="text-sm font-semibold text-white">PDF tools</p>
+                <p class="mt-1 text-xs text-mist-dim">Organize, convert, edit, optimize</p>
+              </figcaption>
+            </figure>
+
+            <figure class="reveal rounded-3xl border border-white/10 bg-night-850 p-3">
+              <img
+                src="assets/img/screenshot-docx.jpg"
+                width="720"
+                height="1173"
+                loading="lazy"
+                alt="A Word document open in HMXPDF with true page proportions and margins"
+                class="rounded-2xl"
+              />
+              <figcaption class="px-2 py-3">
+                <p class="text-sm font-semibold text-white">DOCX editing</p>
+                <p class="mt-1 text-xs text-mist-dim">Pages, paragraphs, tables, comments</p>
+              </figcaption>
+            </figure>
+
+            <figure class="reveal rounded-3xl border border-white/10 bg-night-850 p-3">
+              <img
+                src="assets/img/screenshot-xlsx.jpg"
+                width="720"
+                height="1173"
+                loading="lazy"
+                alt="A spreadsheet open in HMXPDF with cell editing controls"
+                class="rounded-2xl"
+              />
+              <figcaption class="px-2 py-3">
+                <p class="text-sm font-semibold text-white">XLSX editing</p>
+                <p class="mt-1 text-xs text-mist-dim">Cells, formulas, formats, validation</p>
+              </figcaption>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <!-- Privacy -->
+      <section class="container-x py-16 sm:py-24">
+        <div class="grid items-center gap-10 lg:grid-cols-[1fr_0.9fr]">
+          <div class="reveal">
+            <p class="eyebrow">Private by implementation</p>
+            <h2 class="section-title mt-4">Your documents stay on your device.</h2>
+            <p class="mt-5 text-base leading-relaxed text-mist">
+              HMXPDF has no account system, no in-app advertising, no analytics SDK, and no
+              crash-reporting service in the app code. It does not operate a server for uploading
+              your files or extracted text.
+            </p>
+            <p class="mt-4 text-base leading-relaxed text-mist">
+              A few optional features use the network: the FOSS build can download a pinned Office
+              engine or render a web address you type, and Google Play services may provide the
+              scanner and background-removal models.
+            </p>
+            <a href="privacy.html" class="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-accent-light transition hover:text-white">
+              Read the privacy policy
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M5 12h14m-6-6 6 6-6 6" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </a>
+          </div>
+
+          <ul class="reveal space-y-3">
+            <li class="flex items-start gap-4 rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+              <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-400/10 text-emerald-300">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="m5 13 4 4L19 7" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </span>
+              <div>
+                <p class="text-sm font-semibold text-white">No account or sign-in</p>
+                <p class="mt-1 text-sm text-mist">Open the app and work with a file. Nothing to register.</p>
+              </div>
+            </li>
+            <li class="flex items-start gap-4 rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+              <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-400/10 text-emerald-300">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="m5 13 4 4L19 7" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </span>
+              <div>
+                <p class="text-sm font-semibold text-white">No ads, analytics, or crash SDK</p>
+                <p class="mt-1 text-sm text-mist">These components are not included in the app code.</p>
+              </div>
+            </li>
+            <li class="flex items-start gap-4 rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+              <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-400/10 text-emerald-300">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="m5 13 4 4L19 7" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </span>
+              <div>
+                <p class="text-sm font-semibold text-white">No document upload server</p>
+                <p class="mt-1 text-sm text-mist">Document processing runs in the app, not on an HMXPDF service.</p>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- Download CTA -->
+      <section class="container-x pb-16 sm:pb-24">
+        <div class="reveal relative overflow-hidden rounded-[2rem] border border-accent/25 bg-gradient-to-br from-accent/15 via-night-900 to-night-900 p-8 sm:p-12">
+          <div class="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-accent/25 blur-[100px]" aria-hidden="true"></div>
+          <div class="relative flex flex-col items-start justify-between gap-8 lg:flex-row lg:items-center">
+            <div class="max-w-2xl">
+              <p class="eyebrow">Official download</p>
+              <h2 class="mt-4 text-3xl font-bold tracking-tight text-white sm:text-4xl">Get HMXPDF from the source.</h2>
+              <p class="mt-4 text-base leading-relaxed text-mist">
+                The download page reads the official GitHub repository directly and shows the latest
+                published Android release with its version, release date, APK assets, and SHA-256 — or a clear
+                notice when no release is available.
+              </p>
+            </div>
+            <div class="flex shrink-0 flex-wrap gap-3">
+              <a class="btn-primary" href="download.html">Download</a>
+              <a class="btn-secondary" href="https://github.com/HMXPANEL/HMXPDF/releases" target="_blank" rel="noopener noreferrer">GitHub Releases</a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="border-t border-white/10 bg-night-900">
+      <div class="container-x py-14">
+        <div class="grid gap-10 md:grid-cols-4">
+          <div class="md:col-span-2">
+            <a href="index.html" class="flex items-center gap-2.5" aria-label="HMXPDF home">
+              <img src="assets/img/icon-192.png" width="36" height="36" alt="" class="h-9 w-9 rounded-xl" />
+              <span class="text-lg font-bold tracking-tight text-white">HMX<span class="text-accent-light">PDF</span></span>
+            </a>
+            <p class="mt-4 max-w-md text-sm leading-relaxed text-mist">
+              An open-source Android document toolkit for PDFs, Word files, spreadsheets, scans, and
+              images. Built with Kotlin and Jetpack Compose.
+            </p>
+            <p class="mt-4 text-xs text-mist-dim">Source licensed under the MIT License.</p>
+          </div>
+
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-mist-dim">Explore</p>
+            <ul class="mt-4 space-y-2.5">
+              <li><a class="footer-link" href="index.html">Home</a></li>
+              <li><a class="footer-link" href="features.html">Features</a></li>
+              <li><a class="footer-link" href="download.html">Download</a></li>
+              <li><a class="footer-link" href="faq.html">FAQ</a></li>
+            </ul>
+          </div>
+
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-mist-dim">Project</p>
+            <ul class="mt-4 space-y-2.5">
+              <li><a class="footer-link" href="support.html">Support</a></li>
+              <li><a class="footer-link" href="privacy.html">Privacy Policy</a></li>
+              <li><a class="footer-link" href="about.html">About</a></li>
+              <li>
+                <a class="footer-link" href="https://github.com/HMXPANEL/HMXPDF" target="_blank" rel="noopener noreferrer">Source code</a>
+              </li>
+              <li>
+                <a class="footer-link" href="https://github.com/HMXPANEL/HMXPDF/releases" target="_blank" rel="noopener noreferrer">Releases</a>
+              </li>
+              <li>
+                <a class="footer-link" href="https://github.com/HMXPANEL/HMXPDF/issues" target="_blank" rel="noopener noreferrer">Report an issue</a>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="mt-12 border-t border-white/10 pt-8">
+          <p class="max-w-4xl text-xs leading-relaxed text-mist-dim">
+            HMXPDF is an independent open-source Android project. Android is a trademark of Google
+            LLC. Microsoft, Word, Excel, and PowerPoint are trademarks of Microsoft Corporation.
+            LibreOffice is a trademark of The Document Foundation. HMXPDF is not affiliated with or
+            endorsed by these companies.
+          </p>
+          <p class="mt-3 text-xs text-mist-dim">
+            © <span data-year>2026</span> HMXPDF. Screenshots show the current source build.
+          </p>
+        </div>
+      </div>
+    </footer>
+
+    <script src="assets/js/release.js" defer></script>
+  </body>
+</html>

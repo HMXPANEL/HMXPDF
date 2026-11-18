@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability privately
+    url: https://github.com/HMXPANEL/HMXPDF/security/advisories/new
+    about: Use GitHub's private vulnerability reporting form. Do not post security details publicly.
+  - name: Official website and documentation
+    url: https://hmxpdf-website.vercel.app
+    about: Features, supported formats, privacy policy, and the current release status.

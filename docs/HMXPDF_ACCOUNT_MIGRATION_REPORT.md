@@ -11,6 +11,8 @@
 
 ## Release provenance and signing
 
+The destination release is published at https://github.com/HMXPANEL/HMXPDF/releases/tag/v2.1.1. It targets `646c0c35547e3e905e9a7763e48c1329d13e008a`, was produced by tag-triggered Actions run `44448335798`, and contains five individual APKs plus `HMXPDF-v2.1.1-APK-SHA256SUMS.txt`. The draft assets were downloaded again through GitHub's binary asset API and matched the checksums below. The historical source ZIP is not attached.
+
 The original `v2.1.1` release came from historical commit `1a069bbb0b68268de33e4da834dffd7e7cd6d7dc`, Actions run `44343854184`. Its five APKs matched the original CI artifact byte for byte. Each verified as package `com.hmx.pdf`, version `2.1.1`, versionCode `6`, and carried the same verified release certificate. These are **historical** checksums, not destination release checksums:
 
 | APK | SHA-256 |
@@ -21,9 +23,9 @@ The original `v2.1.1` release came from historical commit `1a069bbb0b68268de33e4
 | `app-play-x86_64-release.apk` | `eaa4a05ddf79b4e25bf3d1785775005740fa7484db7fad3238f6ac3053d4904d` |
 | `app-play-universal-release.apk` | `37088d629f7c3bf19837229a466468a9c0a1ac469e4b30804c53517aa3902e29` |
 
-The original APKs predate the current launcher icons and repository URL. Do not attach them to a tag pointing to the new snapshot as if they were built from it. The new production release requires a signed CI build of the actual tagged snapshot with the existing signing key, signature and ABI verification, five individual APK assets and a SHA-256 manifest. Do not upload the original ZIP, debug APKs or AABs. Check the [current releases](https://github.com/HMXPANEL/HMXPDF/releases) and [CI results](https://github.com/HMXPANEL/HMXPDF/actions/workflows/android.yml) for live status.
+The destination APKs are the signed CI build of the actual tagged snapshot. They retain the package/version and existing signing certificate; the fresh source snapshot also contains the migrated repository identity and current launcher resources.
 
-Configure these GitHub Actions secrets in the `release` environment using the existing signing credentials. They were absent at the initial audit:
+The destination `release` environment was configured with these existing signing credentials:
 
 | Secret | Purpose |
 | --- | --- |
@@ -38,5 +40,5 @@ No signing variables are required. The release guard deliberately tests four uns
 
 - Existing project: `hmxpdf-website`; production URL stays https://hmxpdf-website.vercel.app.
 - Reconnect the existing project to `HMXPANEL/HMXPDF` after granting the Vercel GitHub app access. Use `hmxwebsite`, preset Other, no build or install command, output `.`, and production branch `release/hmxpdf-2.1.1-build`.
-- The destination site uses the destination GitHub API and keeps Download APK disabled. The GitHub button opens the official Releases page. Do not treat the cutover as complete until a Git-triggered production deployment is verified.
+- The destination site uses the destination GitHub API and keeps Download APK disabled. The GitHub button opens the official Releases page. Production cutover remains pending until Vercel Git authorization is granted and a Git-triggered production deployment is verified.
 - Upload `screenshots/social-preview.png` in the repository's General settings for a custom social preview.
